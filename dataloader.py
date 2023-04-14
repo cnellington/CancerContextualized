@@ -12,6 +12,20 @@ from sklearn.cluster import KMeans
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 
+def load_toy_data(
+        num_features=10,
+        num_samples=100,
+        num_labels=2,
+        num_contexts=10,
+):
+    C = np.random.normal(0, 1, (num_samples, num_contexts))
+    X = np.random.normal(0, 1, (num_samples, num_features))
+    labels = np.random.choice(num_labels, size=num_samples)
+    ids = np.arange(num_samples)
+    C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
+    return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test
+
+
 def load_data(
     num_features=50,        # number of expression features to consider
     tumor_only=False,        # remove healthy samples
