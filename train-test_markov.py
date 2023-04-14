@@ -9,7 +9,14 @@ from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 
-from contextualized.easy import ContextualizedMarkovNetworks
+# from contextualized.easy import ContextualizedMarkovNetworks
+# from contextualized.regression.lightning_modules import ContextualizedMarkovGraph
+# from contextualized.regression.trainers import MarkovTrainer
+# from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+# from pytorch_lightning.callbacks import ModelCheckpoint
+# from contextualized.regression.regularizers import l1_reg
+from models import ContextualizedMarkovGraphWrapper
+
 from contextualized.functions import LINK_FUNCTIONS
 from contextualized import save, load
 
@@ -83,31 +90,14 @@ for boot_i in range(n_bootstraps):
     C_boot, X_boot = C_train[boot_idx], X_train[boot_idx]
 
     torch.manual_seed(boot_i)
-    model_kwargs = {
-        'num_archetypes': 100,
-        'encoder_type': 'mlp',
-        'width': 256,
-        'layers': 4,
-        'link_fn': LINK_FUNCTIONS['identity'],
-        'train_batch_size': 100,
-        'val_batch_size': 100,
-        'alpha': 1e-5,
-        'l1_ratio': 1.0,
-        'mu_ratio': 0.0,
-    }
-    fit_kwargs = {
-        'es_patience': 5,
-        'es_min_delta': 0.01,
-    }
-    contextualized_model = ContextualizedMarkovNetworks(**model_kwargs)
-    contextualized_model.fit(C_train, X_train, **fit_kwargs)
+    contextualized_model = ContextualizedMarkovGraphWrapper().fit(C_boot, X_boot)
     save(contextualized_model, f'{savedir}/contextualized_boot{boot_i}')
     all_contextualized.append(contextualized_model)
-    print(np.mean(contextualized_model.measure_mses(C_boot, X_boot)),
-          np.mean(contextualized_model.measure_mses(C_test, X_test)))
-# %%
-# np.mean(all_contextualized[0].measure_mses(C_test, X_test))
-# %% md
+    train_mses = contextualized_model.mses(C_train, X_train)
+    test_mses = contextualized_model.mses(C_test, X_test)
+    print(train_mses.mean(), test_mses.mean())
+
+
 ## Load pre-trained models
 # %%
 # savedir = f'results/saved_models/markov-pca50'
@@ -131,7 +121,7 @@ def get_mses(experiment, model, C, X, labels=None):
     elif experiment in ['cluster', 'oracle']:
         return model.mses(X, labels)
     elif experiment in ['sample specific']:
-        return np.array(model.measure_mses(C, X))
+        return model.mses(C, X)
     return None
 
 
@@ -265,12 +255,12 @@ plot_mse(
 np.save(f'{savedir}/train_mses.npy', train_mses)
 np.save(f'{savedir}/test_mses.npy', mses)
 
-w_train = [contextualized.predict_precisions(C_train, individual_preds=False) for contextualized in all_contextualized]
+w_train = [contextualized.predict(C_train)[0] for contextualized in all_contextualized]
 w_train = np.mean(w_train, axis=0)
-w_test = [contextualized.predict_precisions(C_test, individual_preds=False) for contextualized in all_contextualized]
+w_test = [contextualized.predict(C_test)[0] for contextualized in all_contextualized]
 w_test = np.mean(w_test, axis=0)
-np.save(f'{savedir}/markov_networks_train.npy', w_train)
-np.save(f'{savedir}/markov_networks_test.npy', w_test)
+np.save(f'{savedir}/neighborhood_selection_train.npy', w_train)
+np.save(f'{savedir}/neighborhood_selection_test.npy', w_test)
 # %%
 import umap
 

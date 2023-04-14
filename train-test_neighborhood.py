@@ -3,17 +3,10 @@ import dill as pickle
 import numpy as np
 import pandas as pd
 import torch
-
-from sklearn.model_selection import train_test_split
-from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
-
-from contextualized.easy import ContextualizedMarkovNetworks
-from contextualized.functions import LINK_FUNCTIONS
 from contextualized import save, load
-
+from models import ContextualizedNeighborhoodSelectionWrapper
 from baselines import MarkovNetwork, GroupedNetworks
-
 from dataloader import load_data
 
 data_state = {
@@ -31,7 +24,7 @@ kmeans = KMeans(n_clusters=len(np.unique(labels_train)), random_state=0).fit(C_t
 cluster_labels_train, cluster_labels_test = kmeans.predict(C_train), kmeans.predict(C_test)
 
 
-savedir = f'saved_models/testrun'
+savedir = f'saved_models/testneighborhood'
 os.makedirs(savedir, exist_ok=True)
 n_bootstraps = 1
 
@@ -79,28 +72,12 @@ for boot_i in range(n_bootstraps):
     C_boot, X_boot = C_train[boot_idx], X_train[boot_idx]
 
     torch.manual_seed(boot_i)
-    model_kwargs = {
-        'num_archetypes': 100,
-        'encoder_type': 'mlp',
-        'width': 256,
-        'layers': 4,
-        'link_fn': LINK_FUNCTIONS['identity'],
-        'train_batch_size': 100,
-        'val_batch_size': 100,
-        'alpha': 1e-5,
-        'l1_ratio': 1.0,
-        'mu_ratio': 0.0,
-    }
-    fit_kwargs = {
-        'es_patience': 5,
-        'es_min_delta': 0.01,
-    }
-    contextualized_model = ContextualizedMarkovNetworks(**model_kwargs)
-    contextualized_model.fit(C_train, X_train, **fit_kwargs)
+    contextualized_model = ContextualizedNeighborhoodSelectionWrapper().fit(C_boot, X_boot)
     save(contextualized_model, f'{savedir}/contextualized_boot{boot_i}')
     all_contextualized.append(contextualized_model)
-    print(np.mean(contextualized_model.measure_mses(C_boot, X_boot)),
-          np.mean(contextualized_model.measure_mses(C_test, X_test)))
+    train_mses = contextualized_model.mses(C_train, X_train)
+    test_mses = contextualized_model.mses(C_test, X_test)
+    print(train_mses.mean(), train_mses.std(), test_mses.mean(), test_mses.std())
 
 # savedir = f'results/saved_models/markov-pca50'
 # n_bootstraps = 3
@@ -122,7 +99,7 @@ def get_mses(experiment, model, C, X, labels=None):
     elif experiment in ['cluster', 'oracle']:
         return model.mses(X, labels)
     elif experiment in ['sample specific']:
-        return np.array(model.measure_mses(C, X))
+        return model.mses(C, X)
     return None
 
 
@@ -255,9 +232,9 @@ plot_mse(
 np.save(f'{savedir}/train_mses.npy', train_mses)
 np.save(f'{savedir}/test_mses.npy', mses)
 
-w_train = [contextualized.predict_precisions(C_train, individual_preds=False) for contextualized in all_contextualized]
+w_train = [contextualized.predict(C_train)[0] for contextualized in all_contextualized]
 w_train = np.mean(w_train, axis=0)
-w_test = [contextualized.predict_precisions(C_test, individual_preds=False) for contextualized in all_contextualized]
+w_test = [contextualized.predict(C_test)[0] for contextualized in all_contextualized]
 w_test = np.mean(w_test, axis=0)
 np.save(f'{savedir}/markov_networks_train.npy', w_train)
 np.save(f'{savedir}/markov_networks_test.npy', w_test)
