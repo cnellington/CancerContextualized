@@ -7,7 +7,7 @@ from sklearn.cluster import KMeans
 from contextualized import save, load
 from models import ContextualizedNeighborhoodSelectionWrapper
 from baselines import NeighborhoodSelection, GroupedNetworks
-from dataloader import load_data
+from dataloader import load_data, load_toy_data
 
 data_state = {
     'num_features': 50,
@@ -19,6 +19,7 @@ data_state = {
     'feature_selection': 'population',
 }
 C_train, C_test, X_train, X_test, labels_train, labels_test, _, _ = load_data(**data_state)
+# C_train, C_test, X_train, X_test, labels_train, labels_test, _, _ = load_toy_data()
 
 kmeans = KMeans(n_clusters=len(np.unique(labels_train)), random_state=0).fit(C_train)
 cluster_labels_train, cluster_labels_test = kmeans.predict(C_train), kmeans.predict(C_test)
@@ -243,7 +244,7 @@ np.save(f'{savedir}/markov_networks_test.npy', w_test)
 import umap
 
 reducer = umap.UMAP()
-w = reducer.fit_transform(w_train.reshape((len(w_train), 50 * 50)))
+w = reducer.fit_transform(w_train.reshape((len(w_train), w_train.shape[-1] * w_train.shape[-2])))
 x = reducer.fit_transform(X_train)
 # %%
 import matplotlib as mpl
