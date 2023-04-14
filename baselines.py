@@ -119,7 +119,7 @@ class CorrelationNetwork:
         return mses
     
 
-class MarkovNetwork:
+class NeighborhoodSelection:
     def __init__(self, alpha=0.0, l1_ratio=1.0):
         self.alpha = alpha
         self.l1_ratio = l1_ratio
@@ -266,11 +266,11 @@ if __name__ == '__main__':
     grouped_corr.predict(labels)
     print(grouped_corr.mses(X, labels).mean())
     
-    mark = MarkovNetwork().fit(X)
+    mark = NeighborhoodSelection().fit(X)
     mark.predict(n)
     print(mark.mses(X).mean())
 
-    grouped_mark = GroupedNetworks(MarkovNetwork).fit(X, labels)
+    grouped_mark = GroupedNetworks(NeighborhoodSelection).fit(X, labels)
     grouped_mark.predict(labels)
     print(grouped_mark.mses(X, labels).mean())
 

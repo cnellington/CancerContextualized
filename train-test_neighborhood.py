@@ -6,7 +6,7 @@ import torch
 from sklearn.cluster import KMeans
 from contextualized import save, load
 from models import ContextualizedNeighborhoodSelectionWrapper
-from baselines import MarkovNetwork, GroupedNetworks
+from baselines import NeighborhoodSelection, GroupedNetworks
 from dataloader import load_data
 
 data_state = {
@@ -41,15 +41,15 @@ for boot_i in range(n_bootstraps):
 
     # Learn a single correlation model representing the whole population
     print('Training population model')
-    markov_constructor = lambda: MarkovNetwork(alpha=1., l1_ratio=1.0)
-    population_model = markov_constructor().fit(X_boot)
+    neighborhood_constructor = lambda: NeighborhoodSelection(alpha=1., l1_ratio=1.0)
+    population_model = neighborhood_constructor().fit(X_boot)
     all_pop.append(population_model)
     save(population_model, f'{savedir}/population_boot{boot_i}')
     print(population_model.mses(X_boot).mean(), population_model.mses(X_test).mean())
 
     # Learn context-clusters and learn a correlation model for each cluster
     print('Training clustered model')
-    clustered_model = GroupedNetworks(markov_constructor).fit(X_boot, cluster_labels_train[boot_idx])
+    clustered_model = GroupedNetworks(neighborhood_constructor).fit(X_boot, cluster_labels_train[boot_idx])
     all_cluster.append(clustered_model)
     save(clustered_model, f'{savedir}/clustered_boot{boot_i}')
     print(clustered_model.mses(X_boot, cluster_labels_train[boot_idx]).mean(),
@@ -57,7 +57,7 @@ for boot_i in range(n_bootstraps):
 
     # Learn a correlation model for each tissue
     print('Training oracle model')
-    oracle_model = GroupedNetworks(markov_constructor).fit(X_boot, labels_train[boot_idx])
+    oracle_model = GroupedNetworks(neighborhood_constructor).fit(X_boot, labels_train[boot_idx])
     all_oracle.append(oracle_model)
     save(oracle_model, f'{savedir}/oracle_boot{boot_i}')
     print(oracle_model.mses(X_boot, labels_train[boot_idx]).mean(), oracle_model.mses(X_test, labels_test).mean())
