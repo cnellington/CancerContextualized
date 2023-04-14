@@ -1,13 +1,5 @@
-# print('Training population model')
-# markov_constructor = lambda: MarkovNetwork(alpha=1., l1_ratio=1.0)
-# population_model = markov_constructor().fit(X_boot)
-# all_pop.append(population_model)
-# save(population_model, f'{savedir}/population_boot{boot_i}')
-# print(population_model.mses(X_boot).mean(), population_model.mses(X_test).mean())
-
 import dill as pickle
 import numpy as np
-import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
