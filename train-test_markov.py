@@ -20,7 +20,7 @@ from models import ContextualizedMarkovGraphWrapper
 from contextualized.functions import LINK_FUNCTIONS
 from contextualized import save, load
 
-from baselines import MarkovNetwork, GroupedNetworks
+from baselines import NeighborhoodSelection, GroupedNetworks
 
 from dataloader import load_data
 
@@ -59,7 +59,7 @@ for boot_i in range(n_bootstraps):
 
     # Learn a single correlation model representing the whole population
     print('Training population model')
-    markov_constructor = lambda: MarkovNetwork(alpha=1., l1_ratio=1.0)
+    markov_constructor = lambda: NeighborhoodSelection(alpha=1., l1_ratio=1.0)
     population_model = markov_constructor().fit(X_boot)
     all_pop.append(population_model)
     save(population_model, f'{savedir}/population_boot{boot_i}')
