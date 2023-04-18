@@ -23,7 +23,8 @@ def load_toy_data(
     labels = np.random.choice(num_labels, size=num_samples)
     ids = np.arange(num_samples)
     C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
-    return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test
+    col_names = [f'feature_{i}' for i in range(num_features)]
+    return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names
 
 
 def load_data(
@@ -167,6 +168,7 @@ def load_data(
         pca = PCA(n_components=None, random_state=1).fit(X_train)
         X_train = pca.transform(X_train)
         X_test = pca.transform(X_test)
+        tnames_full = np.array([f"PC{i}" for i in range(X_train.shape[1])])
     if transform == 'hallmark':
         hallmark_tnames = []
         hallmark_train = []
@@ -224,7 +226,7 @@ def load_data(
     print(f"Covariates: {C_train.shape} {C_test.shape} {len(C)}")
     print(f"Features: {X_train.shape} {X_test.shape} {len(X)}")
     
-    return C_train, C_test, X_train, X_test, labels_train, labels_test, tcga_ids_train, tcga_ids_test
+    return C_train, C_test, X_train, X_test, labels_train, labels_test, tcga_ids_train, tcga_ids_test, tnames_full
 
 
 if __name__ == '__main__':
