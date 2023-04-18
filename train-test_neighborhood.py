@@ -20,16 +20,16 @@ data_state = {
     'transform': 'pca',
     'feature_selection': 'population',
 }
-C_train, C_test, X_train, X_test, labels_train, labels_test, _, _ = load_data(**data_state)
-# C_train, C_test, X_train, X_test, labels_train, labels_test, _, _ = load_toy_data()
+C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_data(**data_state)
+# C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
 
 
 savedir = f'saved_models/testneighborhood'
 os.makedirs(savedir, exist_ok=True)
 n_bootstraps = 3
-load_saved = True
+load_saved = False
 mse_df_rows = []
-write_rows = lambda boot_i, method, split, diseases, mses: mse_df_rows.extend([(boot_i, method, split, disease, mse) for disease, mse in zip(diseases, mses)])
+write_rows = lambda boot_i, tcga_ids, method, split, diseases, mses: mse_df_rows.extend([(boot_i, tcga_id, method, split, disease, mse) for disease, tcga_id, mse in zip(diseases, tcga_ids, mses)])
 
 all_pop = []
 all_cluster = []
@@ -52,9 +52,9 @@ for boot_i in range(n_bootstraps):
         save(population_model, f'{savedir}/population_boot{boot_i}')
     all_pop.append(population_model)
     train_mses = population_model.mses(X_train)
-    write_rows(boot_i, 'Population', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Population', 'Train', labels_train, train_mses)
     test_mses = population_model.mses(X_test)
-    write_rows(boot_i, 'Population', 'Test', labels_test, test_mses)
+    write_rows(boot_i, ids_test, 'Population', 'Test', labels_test, test_mses)
     print(
         population_model.mses(X_boot).mean(),
         train_mses.mean(),
@@ -72,9 +72,9 @@ for boot_i in range(n_bootstraps):
         save(clustered_model, f'{savedir}/clustered_boot{boot_i}')
     all_cluster.append(clustered_model)
     train_mses = clustered_model.mses(X_train, cluster_labels_train)
-    write_rows(boot_i, 'Cluster-specific', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Cluster-specific', 'Train', labels_train, train_mses)
     test_mses = clustered_model.mses(X_test, cluster_labels_test)
-    write_rows(boot_i, 'Cluster-specific', 'Test', labels_test, test_mses)
+    write_rows(boot_i, ids_test, 'Cluster-specific', 'Test', labels_test, test_mses)
     print(
         clustered_model.mses(X_boot, cluster_labels_train[boot_idx]).mean(),
         train_mses.mean(),
@@ -90,9 +90,9 @@ for boot_i in range(n_bootstraps):
         save(oracle_model, f'{savedir}/oracle_boot{boot_i}')
     all_oracle.append(oracle_model)
     train_mses = oracle_model.mses(X_train, labels_train)
-    write_rows(boot_i, 'Disease-specific', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Disease-specific', 'Train', labels_train, train_mses)
     test_mses = oracle_model.mses(X_test, labels_test)
-    write_rows(boot_i, 'Disease-specific', 'Test', labels_test, test_mses)
+    write_rows(boot_i, ids_test, 'Disease-specific', 'Test', labels_test, test_mses)
     print(
         oracle_model.mses(X_boot, labels_train[boot_idx]).mean(),
         train_mses.mean(),
@@ -108,26 +108,27 @@ for boot_i in range(n_bootstraps):
         save(contextualized_model, f'{savedir}/contextualized_boot{boot_i}')
     all_contextualized.append(contextualized_model)
     train_mses = contextualized_model.mses(C_train, X_train)
-    write_rows(boot_i, 'Contextualized', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Contextualized', 'Train', labels_train, train_mses)
     test_mses = contextualized_model.mses(C_test, X_test)
-    write_rows(boot_i, 'Contextualized', 'Test', labels_test, test_mses)
+    write_rows(boot_i, ids_test, 'Contextualized', 'Test', labels_test, test_mses)
     print(
         contextualized_model.mses(C_boot, X_boot).mean(),
         train_mses.mean(),
         test_mses.mean(),
     )
 
-mse_df = pd.DataFrame(data=mse_df_rows, columns=['Bootstrap', 'Model', 'Set', 'Disease', 'MSE'])
+mse_df = pd.DataFrame(data=mse_df_rows, columns=['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease', 'MSE'])
 mse_df.to_csv(f'{savedir}/mse_df.csv', index=False)
 
 def plot_mse_by_disease(mse_df, set_label):
     datapoints = \
     mse_df[(mse_df['Set'] == 'Train') & (mse_df['Model'] == 'Contextualized') & (mse_df['Bootstrap'] == 0)][
         'Disease'].value_counts().sort_index()
-    mses_by_disease = mse_df.groupby(['Bootstrap', 'Model', 'Set', 'Disease']).mean().reset_index()
+    mses_by_disease = mse_df.drop(columns='sample_id').groupby(['Bootstrap', 'Model', 'Set', 'Disease']).mean().reset_index()
     plot_df = mses_by_disease[mses_by_disease['Set'] == set_label]
 
-    fig, ax = plt.subplots(figsize=(30, 5))
+    n_diseases = len(plot_df['Disease'].unique())
+    fig, ax = plt.subplots(figsize=(n_diseases + 5, 5))
     sns.barplot(
         plot_df,
         x='Disease',
@@ -140,9 +141,9 @@ def plot_mse_by_disease(mse_df, set_label):
     #     edgecolor='black',
         ax=ax
     )
-    plt.xlim(-1, 25)
+    plt.xlim(-1, n_diseases)
     plt.ylim(0, 2.5)
-    ax.plot(list(range(-1, 26)), [1] * 27, linestyle='dashed', color='lightgrey')
+    ax.plot(list(range(-1, n_diseases + 1)), [1] * (n_diseases + 2), linestyle='dashed', color='lightgrey')
 
     labels = [f'{label} ({count})' for label, count in datapoints.iteritems()]
     ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
@@ -161,35 +162,56 @@ plot_mse_by_disease(mse_df, 'Train')
 plot_mse_by_disease(mse_df, 'Test')
 
 
-w_train = [contextualized.predict(C_train)[0] for contextualized in all_contextualized]
+w_train = np.array([contextualized.predict(C_train)[0] for contextualized in all_contextualized])
 w_train = np.mean(w_train, axis=0)
-w_test = [contextualized.predict(C_test)[0] for contextualized in all_contextualized]
+w_train = w_train.reshape((w_train.shape[0], w_train.shape[1] * w_train.shape[2]))
+w_test = np.array([contextualized.predict(C_test)[0] for contextualized in all_contextualized])
 w_test = np.mean(w_test, axis=0)
-np.save(f'{savedir}/markov_networks_train.npy', w_train)
-np.save(f'{savedir}/markov_networks_test.npy', w_test)
+w_test = w_test.reshape((w_test.shape[0], w_test.shape[1] * w_test.shape[2]))
+columns = np.array([[f'{col1}-{col2}' for col2 in col_names] for col1 in col_names]).reshape((len(col_names) ** 2,))
+train_networks = np.concatenate([ids_train[:, np.newaxis], [['Train']] * len(w_train), w_train], axis=1)
+test_networks = np.concatenate([ids_test[:, np.newaxis], [['Test']] * len(w_test),  w_test], axis=1)
+all_networks = np.concatenate([train_networks, test_networks], axis=0)
+columns = ['sample_id', 'Set'] + list(columns)
+networks_df = pd.DataFrame(data=all_networks, columns=columns)
+networks_df.to_csv(f'{savedir}/neighborhood_networks.csv', index=False)
 
 # %%
 import umap
 
 reducer = umap.UMAP()
-w = reducer.fit_transform(w_train.reshape((len(w_train), w_train.shape[-1] * w_train.shape[-2])))
+w = reducer.fit_transform(networks_df.drop(columns=['sample_id', 'Set']).values)
 x = reducer.fit_transform(X_train)
 # %%
 import matplotlib as mpl
 
+fig, ax = plt.subplots(figsize=(10, 10))
 colors = mpl.colormaps['tab20'].colors + mpl.colormaps['tab20b'].colors
 for disease, color in zip(np.unique(labels_train), colors):
     label_idx = labels_train == disease
-    plt.scatter(x[label_idx, 0], x[label_idx, 1], label=disease, s=1., c=[color])
-plt.legend()
+    ax.scatter(x[label_idx, 0], x[label_idx, 1], label=disease, s=1., c=[color])
+ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
+plt.xlabel('UMAP 1', fontsize=18)
+plt.ylabel('UMAP 2', fontsize=18)
+plt.xticks([])
+plt.yticks([])
+plt.title('Transcriptomic Embedding', fontsize=22)
+plt.tight_layout()
 plt.savefig(f'{savedir}/transcriptomic_embedding.pdf')
 plt.clf()
 
 # %%
+fig, ax = plt.subplots(figsize=(10, 10))
 for disease, color in zip(np.unique(labels_train), colors):
-    label_idx = labels_train == disease
-    plt.scatter(w[label_idx, 0], w[label_idx, 1], label=disease, s=1., color=[color])
-plt.legend()
-plt.savefig(f'{savedir}/neighborhood_networks_embedding.pdf')
+    label_idx = np.array(list(labels_train) + list(labels_test)) == disease
+    ax.scatter(w[label_idx, 0], w[label_idx, 1], label=disease, s=1., color=[color])
+ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
+plt.xlabel('UMAP 1', fontsize=18)
+plt.ylabel('UMAP 2', fontsize=18)
+plt.xticks([])
+plt.yticks([])
+plt.title('Network Embedding', fontsize=22)
+plt.tight_layout()
+plt.savefig(f'{savedir}/network_embedding.pdf')
 plt.clf()
 # %%
