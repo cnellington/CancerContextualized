@@ -28,13 +28,13 @@ class NeighborhoodSelectionModule(pl.LightningModule):
         diag_mask = torch.ones(x_dim, x_dim) - torch.eye(x_dim)
         self.register_buffer("diag_mask", diag_mask)
         init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
-        init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
         self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
-        self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
+        # init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
+        # self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
 
     def forward(self, X):
         W = self.W * self.diag_mask
-        return dag_pred(X, W) + self.mu
+        return dag_pred(X, W)  # + self.mu
 
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -76,7 +76,7 @@ class NeighborhoodSelectionModule(pl.LightningModule):
 class MarkovNetworkModule(NeighborhoodSelectionModule):
     def forward(self, X):
         W = (self.W + self.W.T) * self.diag_mask
-        return dag_pred(X, W)
+        return dag_pred(X, W)  # + self.mu
 
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -99,6 +99,7 @@ class CorrelationNetworkModule(NeighborhoodSelectionModule):
         self.register_buffer("diag_mask", diag_mask)
         init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
         self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
+
 
     def forward(self, X):
         X_tiled = torch.transpose(X.unsqueeze(-1).expand(-1, -1, X.shape[-1]), 1, 2)

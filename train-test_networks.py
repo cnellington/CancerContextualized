@@ -7,9 +7,27 @@ import matplotlib.pyplot as plt
 import torch
 from sklearn.cluster import KMeans
 from contextualized import save, load
-from models import ContextualizedNeighborhoodSelectionWrapper
-from baselines import NeighborhoodSelection, GroupedNetworks
+from models import (
+    ContextualizedNeighborhoodSelectionWrapper,
+    ContextualizedMarkovGraphWrapper,
+    ContextualizedCorrelationWrapper,
+    ContextualizedBayesianNetworksWrapper,
+)
+from baselines import (
+    GroupedNetworks,
+    NeighborhoodSelection,
+    MarkovNetwork,
+    CorrelationNetwork,
+    BayesianNetwork,
+)
 from dataloader import load_data, load_toy_data
+
+experiments = {
+    'neighborhood': (NeighborhoodSelection, ContextualizedNeighborhoodSelectionWrapper),
+    'markov': (MarkovNetwork, ContextualizedMarkovGraphWrapper),
+    'correlation': (CorrelationNetwork, ContextualizedCorrelationWrapper),
+    'bayesian': (BayesianNetwork, ContextualizedBayesianNetworksWrapper),
+}
 
 data_state = {
     'num_features': 50,
@@ -20,11 +38,13 @@ data_state = {
     'transform': 'pca',
     'feature_selection': 'population',
 }
-C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_data(**data_state)
-# C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
+# C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_data(**data_state)
+C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
 
 
-savedir = f'saved_models/testneighborhood'
+experiment = 'bayesian'
+baseline_class, contextualized_class = experiments[experiment]
+savedir = f'saved_models/{experiment}'
 os.makedirs(savedir, exist_ok=True)
 n_bootstraps = 3
 load_saved = False
@@ -48,7 +68,7 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         population_model = load(f'{savedir}/population_boot{boot_i}')
     else:
-        population_model = NeighborhoodSelection().fit(X_boot)
+        population_model = baseline_class().fit(X_boot)
         save(population_model, f'{savedir}/population_boot{boot_i}')
     all_pop.append(population_model)
     train_mses = population_model.mses(X_train)
@@ -68,7 +88,7 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         clustered_model = load(f'{savedir}/clustered_boot{boot_i}')
     else:
-        clustered_model = GroupedNetworks(NeighborhoodSelection).fit(X_boot, cluster_labels_train[boot_idx])
+        clustered_model = GroupedNetworks(baseline_class).fit(X_boot, cluster_labels_train[boot_idx])
         save(clustered_model, f'{savedir}/clustered_boot{boot_i}')
     all_cluster.append(clustered_model)
     train_mses = clustered_model.mses(X_train, cluster_labels_train)
@@ -82,12 +102,12 @@ for boot_i in range(n_bootstraps):
     )
 
     # Learn a correlation model for each tissue
-    print('Training oracle model')
+    print('Training disease model')
     if load_saved:
-        oracle_model = load(f'{savedir}/oracle_boot{boot_i}')
+        oracle_model = load(f'{savedir}/disease_boot{boot_i}')
     else:
-        oracle_model = GroupedNetworks(NeighborhoodSelection).fit(X_boot, labels_train[boot_idx])
-        save(oracle_model, f'{savedir}/oracle_boot{boot_i}')
+        oracle_model = GroupedNetworks(baseline_class).fit(X_boot, labels_train[boot_idx])
+        save(oracle_model, f'{savedir}/disease_boot{boot_i}')
     all_oracle.append(oracle_model)
     train_mses = oracle_model.mses(X_train, labels_train)
     write_rows(boot_i, ids_train, 'Disease-specific', 'Train', labels_train, train_mses)
@@ -104,7 +124,7 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         contextualized_model = load(f'{savedir}/contextualized_boot{boot_i}')
     else:
-        contextualized_model = ContextualizedNeighborhoodSelectionWrapper().fit(C_boot, X_boot)
+        contextualized_model = contextualized_class().fit(C_boot, X_boot)
         save(contextualized_model, f'{savedir}/contextualized_boot{boot_i}')
     all_contextualized.append(contextualized_model)
     train_mses = contextualized_model.mses(C_train, X_train)
@@ -174,7 +194,7 @@ test_networks = np.concatenate([ids_test[:, np.newaxis], [['Test']] * len(w_test
 all_networks = np.concatenate([train_networks, test_networks], axis=0)
 columns = ['sample_id', 'Set'] + list(columns)
 networks_df = pd.DataFrame(data=all_networks, columns=columns)
-networks_df.to_csv(f'{savedir}/neighborhood_networks.csv', index=False)
+networks_df.to_csv(f'{savedir}/networks.csv', index=False)
 
 # %%
 import umap

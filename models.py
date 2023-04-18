@@ -259,10 +259,11 @@ class ContextualizedBayesianNetworksWrapper:
             self.model.dataloader(C, np.zeros((len(C), self.p, self.p)), batch_size=10),
             project_to_dag=True,
         )
-        return betas
+        mus = np.zeros((len(C), self.p))
+        return betas, mus
 
     def mses(self, C, X):
-        betas = self.predict(C)
+        betas, _ = self.predict(C)
         X_preds = graph_utils.dag_pred_np(X, betas)
         residuals = X - X_preds
         mses = (residuals ** 2).mean(axis=-1)
