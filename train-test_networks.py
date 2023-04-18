@@ -42,7 +42,8 @@ data_state = {
 C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
 
 
-experiment = 'bayesian'
+# todo: turn these into command-line arguments
+experiment = 'neighborhood'
 baseline_class, contextualized_class = experiments[experiment]
 savedir = f'saved_models/{experiment}'
 os.makedirs(savedir, exist_ok=True)
