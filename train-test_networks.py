@@ -5,6 +5,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import torch
+import argparse
 from sklearn.cluster import KMeans
 from contextualized import save, load
 from models import (
@@ -19,11 +20,28 @@ from baselines import (
     MarkovNetwork,
     CorrelationNetwork,
     BayesianNetwork,
+    NeighborhoodSelectionSKLearn,
+    CorrelationNetworkSKLearn,
 )
 from dataloader import load_data, load_toy_data
 
+parser = argparse.ArgumentParser()
+parser.add_argument('--experiment', type=str, default='neighborhood')
+parser.add_argument('--bootstraps', type=int, default=3)
+parser.add_argument('--val_split', type=float, default=0.2)
+parser.add_argument('--load_saved', type=bool, default=False)
+parser.add_argument('--dry_run', default=False, action='store_true')
+experiment = parser.parse_args().experiment
+n_bootstraps = parser.parse_args().bootstraps
+val_split = parser.parse_args().val_split
+load_saved = parser.parse_args().load_saved
+dry_run = parser.parse_args().dry_run
+# experiment = 'neighborhood'
+# n_bootstraps = 3
+# val_split = 0.2
+
 experiments = {
-    'neighborhood': (NeighborhoodSelection, ContextualizedNeighborhoodSelectionWrapper),
+    'neighborhood': (NeighborhoodSelectionSKLearn, ContextualizedNeighborhoodSelectionWrapper),
     'markov': (MarkovNetwork, ContextualizedMarkovGraphWrapper),
     'correlation': (CorrelationNetwork, ContextualizedCorrelationWrapper),
     'bayesian': (BayesianNetwork, ContextualizedBayesianNetworksWrapper),
@@ -38,17 +56,16 @@ data_state = {
     'transform': 'pca',
     'feature_selection': 'population',
 }
-# C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_data(**data_state)
-C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
 
+if dry_run:
+    C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_toy_data()
+else:
+    C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names = load_data(**data_state)
 
-# todo: turn these into command-line arguments
-experiment = 'neighborhood'
 baseline_class, contextualized_class = experiments[experiment]
-savedir = f'saved_models/{experiment}'
+savedir = f'saved_models/{experiment}-val_split={val_split}-bootstraps={n_bootstraps}-dryrun={dry_run}'
 os.makedirs(savedir, exist_ok=True)
-n_bootstraps = 3
-load_saved = False
+
 mse_df_rows = []
 write_rows = lambda boot_i, tcga_ids, method, split, diseases, mses: mse_df_rows.extend([(boot_i, tcga_id, method, split, disease, mse) for disease, tcga_id, mse in zip(diseases, tcga_ids, mses)])
 
@@ -69,15 +86,17 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         population_model = load(f'{savedir}/population_boot{boot_i}')
     else:
-        population_model = baseline_class().fit(X_boot)
+        population_model = baseline_class().fit(X_boot, val_split=val_split)
         save(population_model, f'{savedir}/population_boot{boot_i}')
     all_pop.append(population_model)
+    boot_mses = population_model.mses(X_boot)
+    write_rows(boot_i, ids_train[boot_idx], 'Population', 'Train', labels_train[boot_idx], boot_mses)
     train_mses = population_model.mses(X_train)
-    write_rows(boot_i, ids_train, 'Population', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Population', 'Full Trainset', labels_train, train_mses)
     test_mses = population_model.mses(X_test)
     write_rows(boot_i, ids_test, 'Population', 'Test', labels_test, test_mses)
     print(
-        population_model.mses(X_boot).mean(),
+        boot_mses.mean(),
         train_mses.mean(),
         test_mses.mean(),
     )
@@ -89,15 +108,17 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         clustered_model = load(f'{savedir}/clustered_boot{boot_i}')
     else:
-        clustered_model = GroupedNetworks(baseline_class).fit(X_boot, cluster_labels_train[boot_idx])
+        clustered_model = GroupedNetworks(baseline_class).fit(X_boot, cluster_labels_train[boot_idx], val_split=val_split)
         save(clustered_model, f'{savedir}/clustered_boot{boot_i}')
     all_cluster.append(clustered_model)
+    boot_mses = clustered_model.mses(X_boot, cluster_labels_train[boot_idx])
+    write_rows(boot_i, ids_train[boot_idx], 'Cluster-specific', 'Train', labels_train[boot_idx], boot_mses)
     train_mses = clustered_model.mses(X_train, cluster_labels_train)
-    write_rows(boot_i, ids_train, 'Cluster-specific', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Cluster-specific', 'Full Trainset', labels_train, train_mses)
     test_mses = clustered_model.mses(X_test, cluster_labels_test)
     write_rows(boot_i, ids_test, 'Cluster-specific', 'Test', labels_test, test_mses)
     print(
-        clustered_model.mses(X_boot, cluster_labels_train[boot_idx]).mean(),
+        boot_mses.mean(),
         train_mses.mean(),
         test_mses.mean(),
     )
@@ -107,15 +128,17 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         oracle_model = load(f'{savedir}/disease_boot{boot_i}')
     else:
-        oracle_model = GroupedNetworks(baseline_class).fit(X_boot, labels_train[boot_idx])
+        oracle_model = GroupedNetworks(baseline_class).fit(X_boot, labels_train[boot_idx], val_split=val_split)
         save(oracle_model, f'{savedir}/disease_boot{boot_i}')
     all_oracle.append(oracle_model)
+    boot_mses = oracle_model.mses(X_boot, labels_train[boot_idx])
+    write_rows(boot_i, ids_train[boot_idx], 'Disease-specific', 'Train', labels_train[boot_idx], boot_mses)
     train_mses = oracle_model.mses(X_train, labels_train)
-    write_rows(boot_i, ids_train, 'Disease-specific', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Disease-specific', 'Full Trainset', labels_train, train_mses)
     test_mses = oracle_model.mses(X_test, labels_test)
     write_rows(boot_i, ids_test, 'Disease-specific', 'Test', labels_test, test_mses)
     print(
-        oracle_model.mses(X_boot, labels_train[boot_idx]).mean(),
+        boot_mses.mean(),
         train_mses.mean(),
         test_mses.mean(),
     )
@@ -125,15 +148,17 @@ for boot_i in range(n_bootstraps):
     if load_saved:
         contextualized_model = load(f'{savedir}/contextualized_boot{boot_i}')
     else:
-        contextualized_model = contextualized_class().fit(C_boot, X_boot)
+        contextualized_model = contextualized_class().fit(C_boot, X_boot, val_split=val_split)
         save(contextualized_model, f'{savedir}/contextualized_boot{boot_i}')
     all_contextualized.append(contextualized_model)
+    boot_mses = contextualized_model.mses(C_boot, X_boot)
+    write_rows(boot_i, ids_train[boot_idx], 'Contextualized', 'Train', labels_train[boot_idx], boot_mses)
     train_mses = contextualized_model.mses(C_train, X_train)
-    write_rows(boot_i, ids_train, 'Contextualized', 'Train', labels_train, train_mses)
+    write_rows(boot_i, ids_train, 'Contextualized', 'Full Trainset', labels_train, train_mses)
     test_mses = contextualized_model.mses(C_test, X_test)
     write_rows(boot_i, ids_test, 'Contextualized', 'Test', labels_test, test_mses)
     print(
-        contextualized_model.mses(C_boot, X_boot).mean(),
+        boot_mses.mean(),
         train_mses.mean(),
         test_mses.mean(),
     )
@@ -168,6 +193,7 @@ def plot_mse_by_disease(mse_df, set_label):
 
     labels = [f'{label} ({count})' for label, count in datapoints.iteritems()]
     ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
+    ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
 
     ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
 
@@ -180,7 +206,14 @@ def plot_mse_by_disease(mse_df, set_label):
     plt.clf()
 
 plot_mse_by_disease(mse_df, 'Train')
+plot_mse_by_disease(mse_df, 'Full Trainset')
 plot_mse_by_disease(mse_df, 'Test')
+
+
+total_mses = mse_df.groupby(['Bootstrap', 'Model', 'Set']).mean().reset_index()
+total_mses = total_mses.groupby(['Model', 'Set']).agg({'MSE': ['mean', 'std']}).reset_index()[['Model', 'Set', 'MSE']]
+total_mses.columns = [' '.join(col) for col in total_mses.columns]
+total_mses.to_csv(f'{savedir}/total_mses.csv', index=False)
 
 
 w_train = np.array([contextualized.predict(C_train)[0] for contextualized in all_contextualized])
