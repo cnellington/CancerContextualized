@@ -59,7 +59,8 @@ class ContextualizedNeighborhoodSelectionWrapper:
                 max_epochs=100,
                 accelerator='auto',
                 devices=1,
-                callbacks=[es_callback, checkpoint_callback]
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
             )
             self.trainer.fit(model, train_dataset, val_dataset)
 
@@ -85,7 +86,8 @@ class ContextualizedNeighborhoodSelectionWrapper:
                 max_epochs=100,
                 accelerator='auto',
                 devices=1,
-                callbacks=[es_callback, checkpoint_callback]
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
             )
             self.trainer.fit(model, train_dataset)
 

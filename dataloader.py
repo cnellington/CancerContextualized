@@ -35,6 +35,7 @@ def load_data(
     pretransform_norm=False, # normalize before the feature transformation
     transform='pca',          # None, or transform expression using 'pca' or 'hallmark avg'
     feature_selection='population',   # select genetic features according to population variance (population) or weighted disease-specific variance (disease)
+    disease_labels=True,
 ):
     # Get Data
     data_dir = './data/'
@@ -86,8 +87,6 @@ def load_data(
         'year_of_birth': True,
         'race': False,
         'sample_type': False,
-        'primary_site': False,
-        'disease_type': False,
         'percent_stromal_cells': True,
         'percent_tumor_cells': True,
         'percent_normal_cells': True,
@@ -99,6 +98,12 @@ def load_data(
         'WGD': False,
         'stage': True,
     }
+    if disease_labels:
+        print('Using disease labels')
+        numeric_covars.update({
+            'primary_site': False,
+            'disease_type': False,
+        })
 #     mut_cols = [col for col in covars.columns if 'Major' in col or 'Minor' in col or 'Mutated' in col]
     mut_cols = [col for col in covars.columns if 'Arm' in col or 'Gene' in col or 'Allele' in col or 'Mutated' in col]
     numeric_covars.update({f"{gene}": True for gene in mut_cols})

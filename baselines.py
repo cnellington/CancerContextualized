@@ -195,17 +195,6 @@ class NeighborhoodSelection:
         self.model_class = NeighborhoodSelectionModule
         self.kwargs = kwargs
 
-    # def fit(self, X):  # no early stopping
-    #     self.p = X.shape[-1]
-    #     self.model = self.model_class(
-    #         self.p,
-    #         **self.kwargs,
-    #     )
-    #     dataset = self.model.dataloader(X)
-    #     self.trainer = pl.Trainer(max_epochs=100, auto_lr_find=True, accelerator='auto', devices=1)
-    #     self.trainer.fit(self.model, dataset)
-    #     return self
-
     def fit(self, X, val_split=0.2):
         self.p = X.shape[-1]
         model = self.model_class(
@@ -232,7 +221,8 @@ class NeighborhoodSelection:
                 max_epochs=100,
                 accelerator='auto',
                 devices=1,
-                callbacks=[es_callback, checkpoint_callback]
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
             )
             self.trainer.fit(model, train_dataset, val_dataset)
 
@@ -258,7 +248,8 @@ class NeighborhoodSelection:
                 max_epochs=100,
                 accelerator='auto',
                 devices=1,
-                callbacks=[es_callback, checkpoint_callback]
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
             )
             self.trainer.fit(model, train_dataset)
 
