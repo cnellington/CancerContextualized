@@ -21,20 +21,24 @@ def dag_loss(w, alpha, rho):
 
 
 class NeighborhoodSelectionModule(pl.LightningModule):
-    def __init__(self, x_dim, l1=1e-3, learning_rate=1e-2):
+    def __init__(self, x_dim, fit_intercept=True, l1=1e-3, learning_rate=1e-2):
         super().__init__()
         self.learning_rate = learning_rate
         self.l1 = l1
         diag_mask = torch.ones(x_dim, x_dim) - torch.eye(x_dim)
         self.register_buffer("diag_mask", diag_mask)
         init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
-        init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
         self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
-        self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
+        if fit_intercept:
+            init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
+            self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
+        else:
+            self.register_buffer("mu", torch.zeros(x_dim))
 
     def forward(self, X):
+        X_centered = X - self.mu
         W = self.W * self.diag_mask
-        return dag_pred(X, W) + self.mu
+        return dag_pred(X_centered, W) + self.mu
 
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -67,16 +71,19 @@ class NeighborhoodSelectionModule(pl.LightningModule):
         X_tensor = torch.Tensor(X).to(torch.float32)
         return DataLoader(dataset=X_tensor, batch_size=batch_size, **kwargs)
 
-    def get_graphs(self, n, **kwargs):
+    def get_params(self, n, **kwargs):
         W = self.W.detach() * self.diag_mask
         W_batch = W.unsqueeze(0).expand(n, -1, -1)
-        return W_batch.numpy()
+        mu = self.mu.detach()
+        mu_batch = mu.unsqueeze(0).expand(n, -1)
+        return W_batch.numpy(), mu_batch.numpy()
 
 
 class MarkovNetworkModule(NeighborhoodSelectionModule):
     def forward(self, X):
+        X_centered = X - self.mu
         W = (self.W + self.W.T) * self.diag_mask
-        return dag_pred(X, W)
+        return dag_pred(X_centered, W) + self.mu
 
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -85,24 +92,32 @@ class MarkovNetworkModule(NeighborhoodSelectionModule):
         l1 = l1_loss((self.W + self.W.T), self.l1)
         return mse + l1
 
-    def get_graphs(self, n, **kwargs):
+    def get_params(self, n, **kwargs):
         W = (self.W + self.W.T).detach() * self.diag_mask
         W_batch = W.unsqueeze(0).expand(n, -1, -1)
-        return W_batch.numpy()
+        mu = self.mu.detach()
+        mu_batch = mu.unsqueeze(0).expand(n, -1)
+        return W_batch.numpy(), mu_batch.numpy()
 
 
 class CorrelationNetworkModule(NeighborhoodSelectionModule):
-    def __init__(self, x_dim, learning_rate=1e-2):
+    def __init__(self, x_dim, fit_intercept=True,  learning_rate=1e-2):
         super().__init__(x_dim, l1=0, learning_rate=learning_rate)
         self.learning_rate = learning_rate
         diag_mask = torch.ones(x_dim, x_dim) - torch.eye(x_dim)
         self.register_buffer("diag_mask", diag_mask)
         init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
         self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
+        if fit_intercept:
+            init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
+            self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
+        else:
+            self.register_buffer("mu", torch.zeros(x_dim))
 
     def forward(self, X):
-        X_tiled = torch.transpose(X.unsqueeze(-1).expand(-1, -1, X.shape[-1]), 1, 2)
-        return X_tiled * self.W
+        X_centered = X - self.mu
+        X_tiled = X_centered.unsqueeze(1).expand(-1, X.shape[-1], -1)
+        return X_tiled * self.W + self.mu.unsqueeze(-1).expand(-1, X.shape[-1])
 
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -116,17 +131,19 @@ class CorrelationNetworkModule(NeighborhoodSelectionModule):
         self.log_dict({'val_loss': loss})
         return loss
 
-    def get_graphs(self, n, **kwargs):
+    def get_params(self, n, **kwargs):
         W = self.W.detach()
         W[torch.sign(W) != torch.sign(W.T)] = 0.0
         corrs = torch.sqrt(W * W.T)
         corrs_batch = corrs.unsqueeze(0).expand(n, -1, -1)
-        return corrs_batch.numpy()
+        mu = self.mu.detach()
+        mu_batch = mu.unsqueeze(0).expand(n, -1)
+        return corrs_batch.numpy(), mu_batch.numpy()
 
 
 class NOTEARS(NeighborhoodSelectionModule):
     def __init__(self, x_dim, l1=1e-3, alpha=1e-8, rho=1e-8, learning_rate=1e-2):
-        super().__init__(x_dim, l1=l1, learning_rate=learning_rate)
+        super().__init__(x_dim, fit_intercept=False, l1=l1, learning_rate=learning_rate)
         self.learning_rate = learning_rate
         self.l1 = l1
         self.alpha = alpha
@@ -137,6 +154,7 @@ class NOTEARS(NeighborhoodSelectionModule):
         self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
         self.tolerance = 0.25
         self.prev_dag = 0.0
+        self.register_buffer("mu", torch.zeros(x_dim))  # placeholder, but no intercept enabled for now
     
     def _batch_loss(self, batch, batch_idx):
         x_true = batch
@@ -145,11 +163,6 @@ class NOTEARS(NeighborhoodSelectionModule):
         l1 = l1_loss(self.W, self.l1)
         dag = dag_loss(self.W, self.alpha, self.rho)
         return 0.5 * mse + l1 + dag
-    
-    def training_step(self, batch, batch_idx):
-        loss = self._batch_loss(batch, batch_idx)
-        self.log_dict({'train_loss': loss})
-        return loss
     
     def validation_step(self, batch, batch_idx):
         x_true = batch
@@ -167,12 +180,14 @@ class NOTEARS(NeighborhoodSelectionModule):
             self.rho = self.rho * 10
         self.prev_dag = dag
 
-    def get_graphs(self, n, project_to_dag=True, **kwargs):
+    def get_params(self, n, project_to_dag=True, **kwargs):
         W = self.W.detach() * self.diag_mask
         if project_to_dag:
             W = torch.tensor(project_to_dag_torch(W.numpy(force=True))[0])
         W_batch = W.unsqueeze(0).expand(n, -1, -1)
-        return W_batch.numpy()
+        mu = self.mu.detach()
+        mu_batch = mu.unsqueeze(0).expand(n, -1)
+        return W_batch.numpy(), mu_batch.numpy()
 
 
 class NeighborhoodSelection:
@@ -180,58 +195,73 @@ class NeighborhoodSelection:
         self.model_class = NeighborhoodSelectionModule
         self.kwargs = kwargs
 
-    # def fit(self, X):  # no early stopping
-    #     self.p = X.shape[-1]
-    #     self.model = self.model_class(
-    #         self.p,
-    #         **self.kwargs,
-    #     )
-    #     dataset = self.model.dataloader(X)
-    #     self.trainer = pl.Trainer(max_epochs=100, auto_lr_find=True, accelerator='auto', devices=1)
-    #     self.trainer.fit(self.model, dataset)
-    #     return self
-
-    def fit(self, X):
+    def fit(self, X, val_split=0.2):
         self.p = X.shape[-1]
         model = self.model_class(
             self.p,
             **self.kwargs,
         )
-        if len(X) > 1:
+        if val_split > 0 and len(X) > 1:
             X_train, X_val = train_test_split(X, test_size=0.2, random_state=1)
-        else:
-            X_train, X_val = X, X
-        train_dataset = model.dataloader(X_train)
-        val_dataset = model.dataloader(X_val)
-        checkpoint_callback = ModelCheckpoint(
-            monitor="val_loss",
-            dirpath=f'checkpoints',  # hacky way to get unique dir
-            filename='{epoch}-{val_loss:.2f}'
-        )
-        es_callback = EarlyStopping(
-            monitor="val_loss",
-            min_delta=0.01,
-            patience=5,
-            verbose=True,
-            mode="min"
-        )
-        self.trainer = pl.Trainer(
-            max_epochs=100,
-            accelerator='auto',
-            devices=1,
-            callbacks=[es_callback, checkpoint_callback]
-        )
-        self.trainer.fit(model, train_dataset, val_dataset)
+            train_dataset = model.dataloader(X_train)
+            val_dataset = model.dataloader(X_val)
+            checkpoint_callback = ModelCheckpoint(
+                monitor="val_loss",
+                dirpath=f'checkpoints',  # hacky way to get unique dir
+                filename='{epoch}-{val_loss:.2f}'
+            )
+            es_callback = EarlyStopping(
+                monitor="val_loss",
+                min_delta=0.01,
+                patience=5,
+                verbose=True,
+                mode="min"
+            )
+            self.trainer = pl.Trainer(
+                max_epochs=100,
+                accelerator='auto',
+                devices=1,
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
+            )
+            self.trainer.fit(model, train_dataset, val_dataset)
 
-        # Get best checkpoint by val_loss, test and save
-        best_checkpoint = torch.load(checkpoint_callback.best_model_path)
-        model.load_state_dict(best_checkpoint['state_dict'])
-        self.model = model
+            # Get best checkpoint by val_loss
+            best_checkpoint = torch.load(checkpoint_callback.best_model_path)
+            model.load_state_dict(best_checkpoint['state_dict'])
+            self.model = model
+        else:
+            train_dataset = model.dataloader(X)
+            checkpoint_callback = ModelCheckpoint(
+                monitor="train_loss",
+                dirpath=f'checkpoints',  # hacky way to get unique dir
+                filename='{epoch}-{train_loss:.2f}'
+            )
+            es_callback = EarlyStopping(
+                monitor="train_loss",
+                min_delta=0.01,
+                patience=5,
+                verbose=True,
+                mode="min"
+            )
+            self.trainer = pl.Trainer(
+                max_epochs=100,
+                accelerator='auto',
+                devices=1,
+                callbacks=[es_callback, checkpoint_callback],
+                enable_progress_bar=False,
+            )
+            self.trainer.fit(model, train_dataset)
+
+            # Get best checkpoint by train_loss
+            best_checkpoint = torch.load(checkpoint_callback.best_model_path)
+            model.load_state_dict(best_checkpoint['state_dict'])
+            self.model = model
         return self
 
 
     def predict(self, n):
-        return self.model.get_graphs(n)
+        return self.model.get_params(n)[0]
 
     def mses(self, X):
         X_preds = torch.cat(self.trainer.predict(self.model, self.model.dataloader(X)), dim=0).detach().numpy()
@@ -261,12 +291,13 @@ class BayesianNetwork(NeighborhoodSelection):
         self.model_class = NOTEARS
 
     def mses(self, X):
-        W_pred = torch.tensor(self.model.get_graphs(1, project_to_dag=True)[0], dtype=torch.float32)
+        W_pred = torch.tensor(self.model.get_params(1, project_to_dag=True)[0], dtype=torch.float32)
         X_preds = dag_pred(torch.tensor(X, dtype=torch.float32), W_pred).detach().numpy()
         return ((X_preds - X)**2).mean(axis=1)
 
+
 class CorrelationNetworkSKLearn:
-    def fit(self, X):
+    def fit(self, X, **kwargs):
         self.p = X.shape[-1]
         self.regs = [[LinearRegression() for _ in range(self.p)] for _ in range(self.p)]
         for i in range(self.p):
@@ -280,7 +311,9 @@ class CorrelationNetworkSKLearn:
             for j in range(self.p):
                 betas[i, j] = self.regs[i][j].coef_.squeeze()
         corrs = betas * betas.T
-        return np.tile(np.expand_dims(corrs, axis=0), (n, 1, 1))
+        corrs_batch = np.tile(np.expand_dims(corrs, axis=0), (n, 1, 1))
+        mus_batch = np.zeros((n, self.p))  # dummy variable for consistency
+        return np.tile(np.expand_dims(corrs, axis=0), (n, 1, 1)), mus_batch
     
     def mses(self, X):
         mses = np.zeros(len(X))
@@ -296,10 +329,16 @@ class NeighborhoodSelectionSKLearn:
     def __init__(self, alpha=0.0, l1_ratio=1.0):
         self.alpha = alpha
         self.l1_ratio = l1_ratio
+        if alpha == 0:
+            self.model_class = lambda: LinearRegression()
+        elif l1_ratio == 1:
+            self.model_class = lambda: Lasso(alpha=alpha)
+        else:
+            self.model_class = lambda: ElasticNet(alpha=alpha, l1_ratio=l1_ratio)
 
-    def fit(self, X):
+    def fit(self, X, **kwargs):
         self.p = X.shape[-1]
-        self.regs = [ElasticNet(alpha=self.alpha, l1_ratio=self.l1_ratio) for _ in range(self.p)]
+        self.regs = [self.model_class() for _ in range(self.p)]
         for i in range(self.p):
             mask = np.ones_like(X)
             mask[:, i] = 0
@@ -312,7 +351,9 @@ class NeighborhoodSelectionSKLearn:
             betas[i] = self.regs[i].coef_.squeeze()
             betas[i, i] = 0
         precision = - np.sign(betas) * np.sqrt(np.abs(betas * betas.T))
-        return np.tile(np.expand_dims(precision, axis=0), (n, 1, 1))
+        mus = np.array([reg.intercept_[0] for reg in self.regs])
+        mus_batch = np.tile(np.expand_dims(mus, axis=0), (n, 1))
+        return np.tile(np.expand_dims(precision, axis=0), (n, 1, 1)), mus_batch
     
     def mses(self, X):
         mses = np.zeros(len(X))
@@ -329,21 +370,22 @@ class GroupedNetworks:
     def __init__(self, model_class):
         self.model_class = model_class
     
-    def fit(self, X, labels):
+    def fit(self, X, labels, **kwargs):
         self.models = {}
         self.p = X.shape[-1]
         for label in np.unique(labels):
             label_idx = labels == label
             X_label = X[label_idx]
-            model = self.model_class().fit(X_label)
+            model = self.model_class().fit(X_label, **kwargs)
             self.models[label] = model
         return self
     
     def predict(self, labels):
         networks = np.zeros((len(labels), self.p, self.p))
+        mus = np.zeros((len(labels), self.p))
         for label in np.unique(labels):
             label_idx = labels == label
-            networks[label_idx] = self.models[label].predict(label_idx.sum())
+            networks[label_idx], mus[label_idx] = self.models[label].predict(label_idx.sum())
         return networks
     
     def mses(self, X, labels):
@@ -364,21 +406,16 @@ if __name__ == '__main__':
     import logging
     logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
 
-    corr = CorrelationNetwork().fit(X)
-    corr.predict(n)
-    print('Correlation', corr.mses(X).mean(), corr.mses(X_test).mean())
-    
-    neighborhood = NeighborhoodSelection().fit(X)
-    neighborhood.predict(n)
-    print('Neighborhood', neighborhood.mses(X).mean(), neighborhood.mses(X_test).mean())
-
-    markov = MarkovNetwork().fit(X)
-    markov.predict(n)
-    print('Markov', markov.mses(X).mean(), markov.mses(X_test).mean())
-
-    dag = BayesianNetwork().fit(X)
-    dag.predict(n)
-    print('DAG', dag.mses(X).mean(), dag.mses(X_test).mean())
+    for model_class, name in [(NeighborhoodSelection, 'Neighborhood'),
+                              (CorrelationNetwork, 'Correlation'),
+                              (MarkovNetwork, 'Markov'),
+                              (BayesianNetwork, 'DAG'),
+                              (NeighborhoodSelectionSKLearn, 'NeighborhoodSKLearn'),
+                              (CorrelationNetworkSKLearn, 'CorrelationSKLearn'),
+                              ]:
+        model = model_class().fit(X, val_split=0)
+        model.predict(n)
+        print(name, model.mses(X).mean(), model.mses(X_test).mean())
 
     # grouped_corr = GroupedNetworks(CorrelationNetwork).fit(X, labels)
     # grouped_corr.predict(labels)
@@ -395,11 +432,3 @@ if __name__ == '__main__':
     # grouped_dag = GroupedNetworks(BayesianNetwork).fit(X, labels)
     # grouped_dag.predict(labels)
     # print('Grouped DAG', grouped_dag.mses(X, labels).mean())
-
-    corr_sklearn = CorrelationNetworkSKLearn().fit(X)
-    corr_sklearn.predict(n)
-    print('SK Correlation', corr_sklearn.mses(X).mean(), corr_sklearn.mses(X_test).mean())
-
-    neighborhood_sklearn = NeighborhoodSelectionSKLearn().fit(X)
-    neighborhood_sklearn.predict(n)
-    print('SK Neighborhood', neighborhood_sklearn.mses(X).mean(), neighborhood_sklearn.mses(X_test).mean())
