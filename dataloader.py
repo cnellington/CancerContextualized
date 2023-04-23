@@ -46,15 +46,19 @@ def load_data(
         'scna_arm_covariates.csv',
         'scna_gene_covariates.csv',
     ]
+
+    # load covariates files
     covars = pd.read_csv(data_dir + covariate_files[0], header=0)
     for covariate_file in covariate_files[1:]:
         covars = covars.merge(pd.read_csv(data_dir + covariate_file, header=0), on='sample_id', how='inner')
     genomic = pd.read_csv(data_dir + "transcriptomic_features.csv", header=0)
+    # only keep the rows that are in covar
     genomic = covars.merge(genomic, on='sample_id', how='inner')[genomic.columns]
     
     tnames_full = np.load(data_dir + "transcript_names.npy")
     hallmark_genes = pd.read_csv(data_dir + 'h.all.v7.5.1.symbols.gmt', header=None, sep='\t')
     hallmark_dict = {}
+    # for each row iin hallmark_genes, organize in a seperate dictionary entry
     for i, row in hallmark_genes.iterrows():
         hallmark_label = row[0]
         hallmark_set = set(row[2:])
@@ -66,14 +70,14 @@ def load_data(
     def drop_cols(df):
         drop_list = []
         for col in df.columns:
-            if len(df[col].unique()) < 2:
+            if len(df[col].unique()) < 2: #drop columns with only one value
                 drop_list.append(col)
         df = df.drop(columns=drop_list)
         print(f'Dropped singular columns: {drop_list}')
         return df
     covars = drop_cols(covars)
 
-    # Remove non-cancerous samples
+    # Remove non-cancerous samples, 2 types of samples: Solid Tissue Normal and Primary Tumor
     if tumor_only:
         cancer_idx = covars['sample_type'] != 'Solid Tissue Normal'
         covars = covars[cancer_idx]
@@ -81,6 +85,7 @@ def load_data(
 
     # deterministic numeric encoding for contexts of interest
     context_df = covars.copy()
+    # if the datatype are numeric or not
     numeric_covars = {
         'age_at_diagnosis': True,
         'gender': False,
@@ -98,22 +103,29 @@ def load_data(
         'WGD': False,
         'stage': True,
     }
+
+    # if disease_labels set to true, then add the following to the numeric_covars
+    # disease label determine if this is included in the context information
     if disease_labels:
         print('Using disease labels')
         numeric_covars.update({
             'primary_site': False,
             'disease_type': False,
         })
+
+    
 #     mut_cols = [col for col in covars.columns if 'Major' in col or 'Minor' in col or 'Mutated' in col]
+    #get a list of column names with following keywords
     mut_cols = [col for col in covars.columns if 'Arm' in col or 'Gene' in col or 'Allele' in col or 'Mutated' in col]
+    # update dictionary with the list of column names in mut_cols and the value for these new keys are True
     numeric_covars.update({f"{gene}": True for gene in mut_cols})
 
     numeric_headers = []
-    for col, numeric in numeric_covars.items():
+    for col, numeric in numeric_covars.items(): # iterate through each entry of the dictionary
         if numeric:
             # Convert numeric values to floats, replace NaN with column mean
             num_col = pd.to_numeric(context_df[col], errors='coerce')
-            num_col = num_col.fillna(num_col.mean())
+            num_col = num_col.fillna(num_col.mean()) #imputation here
             num_header = col+"_numeric"
             numeric_headers.append(num_header)
             context_df[num_header] = num_col
