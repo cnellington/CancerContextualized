@@ -3,27 +3,17 @@ import dill as pickle
 import numpy as np
 import pandas as pd
 import warnings
-
+from sklearn.decomposition import PCA
 #from sklearn.cluster import KMeans
 
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
-'''
-High Level Pseudo Code: (code for each step is broken into a cell)
-0. New Helper Function for splitting data by disease
-1. Load and concatenate covariate files
-2. Housekeeping for parameters
-3. Remove control samples
-4. Define the contxtual data
-5. Define the expression data
-6. Housekeeping for Hallmark related flags
-7. Train-Test Split
-'''
 #%% New Helper Function for splitting data by disease
 
 # diesase split into pickles files because of no randomness and so we don't have to do this again
-def disease_specific_split(labels, covars, tcga_ids, C, X, disease):
-    """produce train and test data for disease
+def disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full):
+    """
+    Produce train and test data for disease
 
     Args:
         labels (ndarray): the disease_type column of the covars dataframe
@@ -37,7 +27,7 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease):
     if not os.path.exists('./disease_specific_data'):
         os.makedirs('./disease_specific_data')
 
-    def train_test_disease (covars, tcga_ids, C, X, disease):
+    def train_test_disease (covars, tcga_ids, C, X, disease, tnames_full):
         # get the context info first
         train_idx = covars[covars['disease_type'] != disease].index.values
         test_idx = covars[covars['disease_type'] == disease].index.values
@@ -63,7 +53,7 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease):
         if not os.path.exists('./disease_specific_data'):
             os.makedirs('./disease_specific_data')
         with open(f'./disease_specific_data/data_{disease}.pkl', 'wb') as f:
-            pickle.dump([c_train, c_test, x_train, x_test, tcga_ids_train, tcga_ids_test], f)
+            pickle.dump([c_train, c_test, x_train, x_test, tcga_ids_train, tcga_ids_test, tnames_full], f)
 
     # if interested in one disease
     if disease != None:
@@ -71,12 +61,11 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease):
             print(f"Error: {disease} is not a valid disease name")
             quit()
         print("Processing disease: ", disease)
-        train_test_disease(covars, tcga_ids, C, X, disease)
+        train_test_disease(covars, tcga_ids, C, X, disease, tnames_full)
     else:
-        print("here number 2")
         for d in np.unique(labels):
             print("Processing disease: ", d)
-            train_test_disease(covars, tcga_ids, C, X, d)
+            train_test_disease(covars, tcga_ids, C, X, d, tnames_full)
 
 
 #%% Input parameters
@@ -92,15 +81,6 @@ def disease_load_data(
     # new parmas for Disease_CV
     #disease_CV = True         # if True, doing disease context CV (hold out a specific disease in CV)    
 ):
-    # if (disease_CV == True) & (tumor_only == False):
-    #     print('Error: disease_CV is True, but tumor_only is False. Model performance will be affected.')
-    #     quit()
-
-    # if (disease_CV == True) & (disease_labels == True):
-    #     print('Error: disease_CV is True, but disease_labels is False. Model performance will be affected.')
-    #     quit()
-
-
 
     data_dir = './data/'
     covariate_files = [
@@ -215,6 +195,126 @@ def disease_load_data(
     
     labels = covars['disease_type'].values
     tcga_ids = covars['sample_id'].values
-    #disease_Specific_split(labels, covars, tcga_ids, C, X)
-    disease_specific_split(labels, covars, tcga_ids, C, X, disease)
 
+    disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full)
+    return tnames_full
+
+#%% normalize data
+
+def disease_data_transformation(num_features, pretransform_norm, transform, feature_selection, disease_label):
+    """
+    All original code with additino of loading the pickle file and some print statements. 
+
+    Args:
+        num_features (int): number of features interested
+        pretransform_norm (bool): if performing pretransform normalization
+        transform (str): pca or hallmark
+        feature_selection (str): disease or population (no disease for now)
+        disease_label (str): the disease label 
+
+    Returns:
+        ndarray: seven ndarrays for the train and testing datasets
+    """
+
+    #open the pickle filee
+    with open('./disease_specific_data/data_' + disease_label + '.pkl', 'rb') as f:
+        C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, tnames_full = pkl.load(f)
+    
+    print(f"Finished loading data for {disease_label}, now transforming...")
+    print(f"C_train: {C_train.shape}, C_test: {C_test.shape}")
+    print(f"X_train: {X_train.shape}, X_test {X_test.shape}")
+    print(f"tcga_ids_train: {tcga_ids_train.shape}, tcga_ids_test: {tcga_ids_test.shape}")
+    print(f"transcript_names: {tnames_full.shape}")
+
+
+    if pretransform_norm:
+        X_means = np.mean(X_train, axis=0)
+        X_stds = np.std(X_train, axis=0)
+        X_stds[X_stds == 0] = 1
+        X_train -= X_means
+        X_test -= X_means
+        X_train /= X_stds
+        X_test /= X_stds
+
+    # Transform expression data
+    if transform == 'pca':
+        pca = PCA(n_components=None, random_state=1).fit(X_train)
+        X_train = pca.transform(X_train)
+        X_test = pca.transform(X_test)
+        tnames_full = np.array([f"PC{i}" for i in range(X_train.shape[1])])
+    if transform == 'hallmark':
+        hallmark_tnames = []
+        hallmark_train = []
+        hallmark_test = []
+        for i, (hallmark_name, geneset) in enumerate(hallmark_dict.items()):
+            hallmark_idx = np.isin(tnames_full, list(geneset))
+            if not hallmark_idx.any():
+                continue
+            hallmark_tnames.append(hallmark_name)
+            hallmark_train.append(X_train[:, hallmark_idx].mean(axis=1))
+            hallmark_test.append(X_test[:, hallmark_idx].mean(axis=1))
+        tnames_full = np.array(hallmark_tnames)
+        X_train = np.array(hallmark_train).T
+        X_test = np.array(hallmark_test).T
+
+    # rank features
+    #     if feature_selection == 'disease':
+    #         # Take a weighted average of intra-disease variance choose the highest scoring genes
+    #         var_avg = np.zeros(len(tnames_full))
+    #         for disease in np.unique(labels_train):
+    #             disease_idx = labels_train == disease
+    #             disease_vars = X_train[disease_idx].var(axis=0)
+    # #             print(f"{disease} {np.sum(disease_idx)}")
+    #             var_avg += disease_vars * (np.sum(disease_idx) / len(disease_idx))  # weight by tissue samples
+    #         feature_ordering = np.argsort(-var_avg)
+    
+    if feature_selection == 'population':
+        population_vars = X_train.var(axis=0)
+        feature_ordering = np.argsort(-population_vars)
+    # todo: logistic selection based on survival
+
+    # trim to desired number of features
+    feature_idx = feature_ordering[:num_features]
+    X_train = X_train[:, feature_idx]
+    X_test = X_test[:, feature_idx]
+    tnames_full = tnames_full[feature_idx]
+
+    # Normalize the data
+    C_means = np.mean(C_train, axis=0)
+    C_stds = np.std(C_train, axis=0)
+    C_stds[C_stds == 0] = 1
+    C_train -= C_means
+    C_test -= C_means
+    C_train /= C_stds
+    C_test /= C_stds
+
+    X_means = np.mean(X_train, axis=0)
+    X_stds = np.std(X_train, axis=0)
+    X_stds[X_stds == 0] = 1
+    X_train -= X_means
+    X_test -= X_means
+    X_train /= X_stds
+    X_test /= X_stds
+        
+    print(f"Finished transforming data for {disease_label}. Printing new shapes...")
+    print(f"Covariates: {C_train.shape} {C_test.shape}")
+    print(f"Features: {X_train.shape} {X_test.shape}")
+    print(f"transcript names: {tnames_full.shape}")
+
+    return C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, tnames_full
+
+#%%
+
+def addition(a, b):
+    """_summary_
+
+    Args:
+        a (_type_): _description_
+        b (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    c = a + b
+    z = a - b
+    return c
