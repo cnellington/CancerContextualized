@@ -303,18 +303,3 @@ def disease_data_transformation(num_features, pretransform_norm, transform, feat
 
     return C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, tnames_full
 
-#%%
-
-def addition(a, b):
-    """_summary_
-
-    Args:
-        a (_type_): _description_
-        b (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    c = a + b
-    z = a - b
-    return c

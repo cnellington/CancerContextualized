@@ -73,8 +73,6 @@ def load_disease_data(data_state):
     
 
 #%%
-
-for 
 data_state = {
         'num_features': 50,
         'pretransform_norm': False,
