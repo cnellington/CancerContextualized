@@ -21,7 +21,7 @@ def dag_loss(w, alpha, rho):
 
 
 class NeighborhoodSelectionModule(pl.LightningModule):
-    def __init__(self, x_dim, fit_intercept=True, l1=1e-3, learning_rate=1e-2):
+    def __init__(self, x_dim, fit_intercept=False, l1=1e-3, learning_rate=1e-2):
         super().__init__()
         self.learning_rate = learning_rate
         self.l1 = l1
@@ -101,18 +101,8 @@ class MarkovNetworkModule(NeighborhoodSelectionModule):
 
 
 class CorrelationNetworkModule(NeighborhoodSelectionModule):
-    def __init__(self, x_dim, fit_intercept=True,  learning_rate=1e-2):
-        super().__init__(x_dim, l1=0, learning_rate=learning_rate)
-        self.learning_rate = learning_rate
-        diag_mask = torch.ones(x_dim, x_dim) - torch.eye(x_dim)
-        self.register_buffer("diag_mask", diag_mask)
-        init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
-        self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
-        if fit_intercept:
-            init_mu = torch.rand(x_dim) * 2e-2 - 1e-2
-            self.mu = nn.parameter.Parameter(init_mu, requires_grad=True)
-        else:
-            self.register_buffer("mu", torch.zeros(x_dim))
+    def __init__(self, x_dim, **kwargs):
+        super().__init__(x_dim, l1=0, **kwargs)
 
     def forward(self, X):
         X_centered = X - self.mu
@@ -133,25 +123,22 @@ class CorrelationNetworkModule(NeighborhoodSelectionModule):
 
     def get_params(self, n, **kwargs):
         W = self.W.detach()
-        W[torch.sign(W) != torch.sign(W.T)] = 0.0
-        corrs = torch.sqrt(W * W.T)
-        corrs_batch = corrs.unsqueeze(0).expand(n, -1, -1)
+        W_batch = W.unsqueeze(0).expand(n, -1, -1)
+        # W[torch.sign(W) != torch.sign(W.T)] = 0.0
+        # corrs = torch.sqrt(W * W.T)
+        # corrs_batch = corrs.unsqueeze(0).expand(n, -1, -1)
         mu = self.mu.detach()
         mu_batch = mu.unsqueeze(0).expand(n, -1)
-        return corrs_batch.numpy(), mu_batch.numpy()
+        return W_batch.numpy(), mu_batch.numpy()
 
 
 class NOTEARS(NeighborhoodSelectionModule):
-    def __init__(self, x_dim, l1=1e-3, alpha=1e-8, rho=1e-8, learning_rate=1e-2):
-        super().__init__(x_dim, fit_intercept=False, l1=l1, learning_rate=learning_rate)
-        self.learning_rate = learning_rate
-        self.l1 = l1
+    def __init__(self, x_dim, alpha=1e-3, rho=1e-3, fit_intercept=False, **kwargs):
+        if fit_intercept:
+            print('intercept fitting not implemented for NOTEARS')
+        super().__init__(x_dim, fit_intercept=False, **kwargs)
         self.alpha = alpha
         self.rho = rho
-        diag_mask = torch.ones(x_dim, x_dim) - torch.eye(x_dim)
-        self.register_buffer("diag_mask", diag_mask)
-        init_mat = (torch.rand(x_dim, x_dim) * 2e-2 - 1e-2) * diag_mask
-        self.W = nn.parameter.Parameter(init_mat, requires_grad=True)
         self.tolerance = 0.25
         self.prev_dag = 0.0
         self.register_buffer("mu", torch.zeros(x_dim))  # placeholder, but no intercept enabled for now
@@ -168,7 +155,7 @@ class NOTEARS(NeighborhoodSelectionModule):
         x_true = batch
         x_pred = self(x_true).detach()
         mse = mse_loss(x_true, x_pred)
-        dag = dag_loss(self.W, 1e12, 1e12).detach()
+        dag = dag_loss(self.W, 1., 1.).detach()
         loss = mse + dag
         self.log_dict({'val_loss': loss})
         return loss
@@ -177,10 +164,10 @@ class NOTEARS(NeighborhoodSelectionModule):
         dag = dag_loss(self.W, self.alpha, self.rho).item()
         if dag > self.tolerance * self.prev_dag and self.alpha < 1e12 and self.rho < 1e12:
             self.alpha = self.alpha + self.rho * dag
-            self.rho = self.rho * 10
+            self.rho = self.rho * 1.2
         self.prev_dag = dag
 
-    def get_params(self, n, project_to_dag=True, **kwargs):
+    def get_params(self, n, project_to_dag=False, **kwargs):
         W = self.W.detach() * self.diag_mask
         if project_to_dag:
             W = torch.tensor(project_to_dag_torch(W.numpy(force=True))[0])
@@ -195,77 +182,109 @@ class NeighborhoodSelection:
         self.model_class = NeighborhoodSelectionModule
         self.kwargs = kwargs
 
-    def fit(self, X, val_split=0.2):
+    def fit(self, C, X, n_bootstraps=1, val_split=0.2):
         self.p = X.shape[-1]
-        model = self.model_class(
-            self.p,
-            **self.kwargs,
-        )
-        if val_split > 0 and len(X) > 1:
-            X_train, X_val = train_test_split(X, test_size=0.2, random_state=1)
-            train_dataset = model.dataloader(X_train)
-            val_dataset = model.dataloader(X_val)
-            checkpoint_callback = ModelCheckpoint(
-                monitor="val_loss",
-                dirpath=f'checkpoints',  # hacky way to get unique dir
-                filename='{epoch}-{val_loss:.2f}'
+        self.models = []
+        for boot_i in range(n_bootstraps):
+            np.random.seed(boot_i)
+            if n_bootstraps > 1:
+                boot_idx = np.random.choice(len(X), size=len(X), replace=True)
+            else:
+                boot_idx = np.arange(len(X))
+            X_boot = X[boot_idx]
+            model = self.model_class(
+                self.p,
+                **self.kwargs,
             )
-            es_callback = EarlyStopping(
-                monitor="val_loss",
-                min_delta=0.01,
-                patience=5,
-                verbose=True,
-                mode="min"
-            )
-            self.trainer = pl.Trainer(
-                max_epochs=100,
-                accelerator='auto',
-                devices=1,
-                callbacks=[es_callback, checkpoint_callback],
-                enable_progress_bar=False,
-            )
-            self.trainer.fit(model, train_dataset, val_dataset)
+            if val_split > 0 and len(X) > 1:
+                X_train, X_val = train_test_split(X_boot, test_size=0.2, random_state=1)
+                train_dataset = model.dataloader(X_train)
+                val_dataset = model.dataloader(X_val)
+                checkpoint_callback = ModelCheckpoint(
+                    monitor="val_loss",
+                    dirpath=f'checkpoints',  # hacky way to get unique dir
+                    filename='{epoch}-{val_loss:.2f}'
+                )
+                es_callback = EarlyStopping(
+                    monitor="val_loss",
+                    min_delta=1e-3,
+                    patience=5,
+                    verbose=True,
+                    mode="min"
+                )
+                self.trainer = pl.Trainer(
+                    max_epochs=100,
+                    accelerator='auto',
+                    devices=1,
+                    callbacks=[es_callback, checkpoint_callback],
+                    enable_progress_bar=False,
+                    enable_model_summary=False,
+                )
+                self.trainer.fit(model, train_dataset, val_dataset)
 
-            # Get best checkpoint by val_loss
-            best_checkpoint = torch.load(checkpoint_callback.best_model_path)
-            model.load_state_dict(best_checkpoint['state_dict'])
-            self.model = model
-        else:
-            train_dataset = model.dataloader(X)
-            checkpoint_callback = ModelCheckpoint(
-                monitor="train_loss",
-                dirpath=f'checkpoints',  # hacky way to get unique dir
-                filename='{epoch}-{train_loss:.2f}'
-            )
-            es_callback = EarlyStopping(
-                monitor="train_loss",
-                min_delta=0.01,
-                patience=5,
-                verbose=True,
-                mode="min"
-            )
-            self.trainer = pl.Trainer(
-                max_epochs=100,
-                accelerator='auto',
-                devices=1,
-                callbacks=[es_callback, checkpoint_callback],
-                enable_progress_bar=False,
-            )
-            self.trainer.fit(model, train_dataset)
+                # Get best checkpoint by val_loss
+                best_checkpoint = torch.load(checkpoint_callback.best_model_path)
+                model.load_state_dict(best_checkpoint['state_dict'])
+                self.models.append(model)
+            else:
+                train_dataset = model.dataloader(X_boot)
+                checkpoint_callback = ModelCheckpoint(
+                    monitor="train_loss",
+                    dirpath=f'checkpoints',  # hacky way to get unique dir
+                    filename='{epoch}-{train_loss:.2f}'
+                )
+                es_callback = EarlyStopping(
+                    monitor="train_loss",
+                    min_delta=1e-3,
+                    patience=5,
+                    verbose=True,
+                    mode="min"
+                )
+                self.trainer = pl.Trainer(
+                    max_epochs=100,
+                    accelerator='auto',
+                    devices=1,
+                    callbacks=[es_callback, checkpoint_callback],
+                    enable_progress_bar=False,
+                    enable_model_summary=False,
+                )
+                self.trainer.fit(model, train_dataset)
 
-            # Get best checkpoint by train_loss
-            best_checkpoint = torch.load(checkpoint_callback.best_model_path)
-            model.load_state_dict(best_checkpoint['state_dict'])
-            self.model = model
+                # Get best checkpoint by train_loss
+                best_checkpoint = torch.load(checkpoint_callback.best_model_path)
+                model.load_state_dict(best_checkpoint['state_dict'])
+                self.models.append(model)
         return self
 
+    def predict_networks(self, C, avg_bootstraps=True):
+        n = len(C)
+        Ws = []
+        mus = []
+        for model in self.models:
+            W, mu = model.get_params(n)
+            Ws.append(W)
+            mus.append(mu)
+        if avg_bootstraps:
+            return np.mean(Ws, axis=0), np.mean(mus, axis=0)
+        else:
+            return np.array(Ws), np.array(mus)
 
-    def predict(self, n):
-        return self.model.get_params(n)[0]
+    def predict(self, C, X, avg_bootstraps=True):
+        X_preds = []
+        for model in self.models:
+            X_pred = torch.cat(self.trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
+            X_preds.append(X_pred)
+        if avg_bootstraps:
+            return np.mean(X_preds, axis=0)
+        else:
+            return np.array(X_preds)
 
-    def mses(self, X):
-        X_preds = torch.cat(self.trainer.predict(self.model, self.model.dataloader(X)), dim=0).detach().numpy()
-        return ((X_preds - X) ** 2).mean(axis=1)
+    def mses(self, C, X, avg_bootstraps=True):
+        X_preds = self.predict(C, X, avg_bootstraps=False)
+        if avg_bootstraps:
+            return ((X_preds - X) ** 2).mean(axis=1)
+        else:
+            return np.array([((X_pred - X) ** 2).mean(axis=1) for X_pred in X_preds])
 
 
 class CorrelationNetwork(NeighborhoodSelection):
@@ -273,10 +292,23 @@ class CorrelationNetwork(NeighborhoodSelection):
         super().__init__(**kwargs)
         self.model_class = CorrelationNetworkModule
 
-    def mses(self, X):
-        X_preds_tiled = torch.cat(self.trainer.predict(self.model, self.model.dataloader(X)), dim=0).detach().numpy()
+    def predict(self, C, X, avg_bootstraps=True):
+        X_preds_tiled = []
+        for model in self.models:
+            X_pred_tiled = torch.cat(self.trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
+            X_preds_tiled.append(X_pred_tiled)
+        if avg_bootstraps:
+            return np.mean(X_preds_tiled, axis=0)
+        else:
+            return np.array(X_preds_tiled)
+
+    def mses(self, C, X, avg_bootstraps=True):
         X_tiled = np.tile(np.expand_dims(X, axis=-1), (1, 1, X.shape[-1]))
-        return ((X_preds_tiled - X_tiled) ** 2).mean(axis=(1, 2))
+        X_preds_tiled = self.predict(C, X, avg_bootstraps=False)
+        if avg_bootstraps:
+            return ((X_preds_tiled - X_tiled) ** 2).mean(axis=(1, 2))
+        else:
+            return np.array([((X_pred_tiled - X_tiled) ** 2).mean(axis=1) for X_pred_tiled in X_preds_tiled])
 
 
 class MarkovNetwork(NeighborhoodSelection):
@@ -286,26 +318,51 @@ class MarkovNetwork(NeighborhoodSelection):
 
 
 class BayesianNetwork(NeighborhoodSelection):
-    def __init__(self, **kwargs):
+    def __init__(self, project_to_dag=False, **kwargs):
         super().__init__(**kwargs)
         self.model_class = NOTEARS
+        self.project_to_dag = project_to_dag
 
-    def mses(self, X):
-        W_pred = torch.tensor(self.model.get_params(1, project_to_dag=True)[0], dtype=torch.float32)
-        X_preds = dag_pred(torch.tensor(X, dtype=torch.float32), W_pred).detach().numpy()
-        return ((X_preds - X)**2).mean(axis=1)
+    def predict_networks(self, C, avg_bootstraps=True):
+        n = len(C)
+        Ws = [self.models[i].get_params(n)[0] for i in range(len(self.models))]
+        if avg_bootstraps:
+            Ws = np.mean(Ws, axis=0)
+        return Ws
+
+    def predict(self, C, X, avg_bootstraps=True):
+        X_preds = []
+        for model in self.models:
+            W_pred = torch.tensor(model.get_params(1, project_to_dag=self.project_to_dag)[0], dtype=torch.float32)
+            X_pred = dag_pred(torch.tensor(X, dtype=torch.float32), W_pred).detach().numpy()
+            X_preds.append(X_pred)
+        if avg_bootstraps:
+            return np.mean(X_preds, axis=0)
+        else:
+            return np.array(X_preds)
+
+    def mses(self, C, X, avg_bootstraps=True):
+        X_preds = self.predict(C, X, avg_bootstraps=False)
+        if avg_bootstraps:
+            return ((X_preds - X) ** 2).mean(axis=1)
+        else:
+            return np.array([((X_pred - X) ** 2).mean(axis=1) for X_pred in X_preds])
 
 
 class CorrelationNetworkSKLearn:
-    def fit(self, X, **kwargs):
+    def __init__(self, fit_intercept=False):
+        self.fit_intercept = fit_intercept
+
+    def fit(self, C, X, **kwargs):
         self.p = X.shape[-1]
-        self.regs = [[LinearRegression() for _ in range(self.p)] for _ in range(self.p)]
+        self.regs = [[LinearRegression(fit_intercept=self.fit_intercept) for _ in range(self.p)] for _ in range(self.p)]
         for i in range(self.p):
             for j in range(self.p):
                 self.regs[i][j].fit(X[:, j, np.newaxis], X[:, i, np.newaxis])
         return self
-    
-    def predict(self, n):
+
+    def predict_networks(self, C):
+        n = len(C)
         betas = np.zeros((self.p, self.p))
         for i in range(self.p):
             for j in range(self.p):
@@ -314,29 +371,33 @@ class CorrelationNetworkSKLearn:
         corrs_batch = np.tile(np.expand_dims(corrs, axis=0), (n, 1, 1))
         mus_batch = np.zeros((n, self.p))  # dummy variable for consistency
         return np.tile(np.expand_dims(corrs, axis=0), (n, 1, 1)), mus_batch
-    
-    def mses(self, X):
-        mses = np.zeros(len(X))
+
+    def predict(self, C, X):
+        X_pred = np.zeros((len(C), self.p, self.p))
         for i in range(self.p):
             for j in range(self.p):
-                residual = self.regs[i][j].predict(X[:, j, np.newaxis]) - X[:, i, np.newaxis]
-                residual = residual[:, 0]
-                mses += (residual ** 2) / self.p**2
-        return mses
+                X_pred[:, i, j] = self.regs[i][j].predict(X[:, j, np.newaxis])[:, 0]
+        return X_pred
+    
+    def mses(self, C, X):
+        X_pred = self.predict(C, X)
+        residuals = X_pred - np.tile(np.expand_dims(X, axis=-1), (1, 1, self.p))
+        return (residuals ** 2).mean(axis=(1, 2))
     
 
 class NeighborhoodSelectionSKLearn:
-    def __init__(self, alpha=0.0, l1_ratio=1.0):
+    def __init__(self, fit_intercept=False, alpha=1e-3, l1_ratio=1.0):
         self.alpha = alpha
         self.l1_ratio = l1_ratio
+        self.fit_intercept = fit_intercept
         if alpha == 0:
-            self.model_class = lambda: LinearRegression()
+            self.model_class = lambda: LinearRegression(fit_intercept=fit_intercept)
         elif l1_ratio == 1:
-            self.model_class = lambda: Lasso(alpha=alpha)
+            self.model_class = lambda: Lasso(alpha=alpha, fit_intercept=fit_intercept)
         else:
-            self.model_class = lambda: ElasticNet(alpha=alpha, l1_ratio=l1_ratio)
+            self.model_class = lambda: ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=fit_intercept)
 
-    def fit(self, X, **kwargs):
+    def fit(self, C, X, **kwargs):
         self.p = X.shape[-1]
         self.regs = [self.model_class() for _ in range(self.p)]
         for i in range(self.p):
@@ -345,61 +406,79 @@ class NeighborhoodSelectionSKLearn:
             self.regs[i].fit(X * mask, X[:, i, np.newaxis])
         return self
     
-    def predict(self, n):
+    def predict_networks(self, C):
+        n = len(C)
         betas = np.zeros((self.p, self.p))
         for i in range(self.p):
             betas[i] = self.regs[i].coef_.squeeze()
             betas[i, i] = 0
         precision = - np.sign(betas) * np.sqrt(np.abs(betas * betas.T))
-        mus = np.array([reg.intercept_[0] for reg in self.regs])
+        if self.fit_intercept:
+            mus = np.array([reg.intercept_[0] for reg in self.regs])
+        else:
+            mus = np.zeros(self.p)
         mus_batch = np.tile(np.expand_dims(mus, axis=0), (n, 1))
         return np.tile(np.expand_dims(precision, axis=0), (n, 1, 1)), mus_batch
-    
-    def mses(self, X):
-        mses = np.zeros(len(X))
+
+    def predict(self, C, X):
+        X_pred = np.zeros_like(X)
         for i in range(self.p):
             mask = np.ones_like(X)
             mask[:, i] = 0
-            residual = self.regs[i].predict(X * mask) - X[:, i, np.newaxis]
-            residual = residual[:, 0]
-            mses += (residual ** 2) / self.p
-        return mses
+            X_pred[:, i] = self.regs[i].predict(X * mask)
+        return X_pred
+
+    def mses(self, C, X):
+        X_pred = self.predict(C, X)
+        return ((X_pred - X) ** 2).mean(axis=1)
 
 
 class GroupedNetworks:
     def __init__(self, model_class):
         self.model_class = model_class
     
-    def fit(self, X, labels, **kwargs):
+    def fit(self, C, X, **kwargs):
+        labels = C
         self.models = {}
         self.p = X.shape[-1]
         for label in np.unique(labels):
             label_idx = labels == label
-            X_label = X[label_idx]
-            model = self.model_class().fit(X_label, **kwargs)
+            model = self.model_class().fit(C[label_idx], X[label_idx], **kwargs)
             self.models[label] = model
         return self
     
-    def predict(self, labels):
+    def predict_networks(self, C):
+        labels = C
         networks = np.zeros((len(labels), self.p, self.p))
         mus = np.zeros((len(labels), self.p))
         for label in np.unique(labels):
             label_idx = labels == label
             networks[label_idx], mus[label_idx] = self.models[label].predict(label_idx.sum())
         return networks
-    
-    def mses(self, X, labels):
+
+    def predict(self, C, X):
+        labels = C
+        X_preds = np.zeros_like(X)
+        for label in np.unique(labels):
+            label_idx = labels == label
+            X_pred = self.models[label].predict(C[label_idx], X[label_idx])
+            if len(X_preds.shape) != len(X_pred.shape):  # make the return value consistent after seeing preds
+                X_preds = np.zeros((len(X), X.shape[-1], X.shape[-1]))
+            X_preds[label_idx] = X_pred
+        return X_preds
+
+    def mses(self, C, X):
+        labels = C
         mses = np.zeros(len(X))
         for label in np.unique(labels):
             label_idx = labels == label
-            X_label = X[label_idx]
-            mses[label_idx] = self.models[label].mses(X_label)
+            mses[label_idx] = self.models[label].mses(C[label_idx], X[label_idx])
         return mses
     
 
 if __name__ == '__main__':
-    n, x_dim = 10, 20
-    labels = np.random.randint(0, 5, (n,))
+    n, x_dim = 100, 50
+    C = np.random.randint(0, 5, (n,))  # labels
     X = np.random.normal(0, 1, (n, x_dim))
     X_test = np.random.normal(0, 1, (n, x_dim))
 
@@ -413,9 +492,10 @@ if __name__ == '__main__':
                               (NeighborhoodSelectionSKLearn, 'NeighborhoodSKLearn'),
                               (CorrelationNetworkSKLearn, 'CorrelationSKLearn'),
                               ]:
-        model = model_class().fit(X, val_split=0)
-        model.predict(n)
-        print(name, model.mses(X).mean(), model.mses(X_test).mean())
+        model = model_class(fit_intercept=False).fit(C, X, val_split=0)
+        model.predict(C, X)
+        model.predict_networks(C)
+        print(name, model.mses(C, X).mean(), model.mses(X_test, X_test).mean())
 
     # grouped_corr = GroupedNetworks(CorrelationNetwork).fit(X, labels)
     # grouped_corr.predict(labels)

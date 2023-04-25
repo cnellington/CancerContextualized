@@ -13,7 +13,7 @@ warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 
 def load_toy_data(
-        num_features=10,
+        num_features=50,
         num_samples=100,
         num_labels=2,
         num_contexts=10,

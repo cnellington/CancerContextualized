@@ -1,1 +1,1 @@
-pip install git+https://github.com/cnellington/Contextualized.git@9026dcb7b674a76a4a4643c13f7f11092ad43469
+pip install git+https://github.com/cnellington/Contextualized.git@19134965ceb07eb64bbd8d10adda230a6d0f970d

@@ -20,11 +20,14 @@ from contextualized.dags.losses import mse_loss
 
 
 class ContextualizedNeighborhoodSelectionWrapper:
-    def __init__(self):
+    def __init__(self, fit_intercept=False):
         self.subtype_kwargs = {
+            'learning_rate': 1e-3,
             'num_archetypes': 40,
+            'metamodel_type': 'subtype',
+            'fit_intercept': fit_intercept,
             'encoder_type': 'mlp',
-            'encoder_kwargs': {'width': 200, 'layers': 4, 'link_fn': LINK_FUNCTIONS['identity']},
+            'encoder_kwargs': {'width': 200, 'layers': 3, 'link_fn': LINK_FUNCTIONS['identity']},
             'model_regularizer': REGULARIZERS['l1'](alpha=1e-5, mu_ratio=0.0)
         }
         self.model_class = ContextualizedNeighborhoodSelection
@@ -50,7 +53,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
             )
             es_callback = EarlyStopping(
                 monitor="val_loss",
-                min_delta=0.01,
+                min_delta=1e-3,
                 patience=5,
                 verbose=True,
                 mode="min"
@@ -77,7 +80,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
             )
             es_callback = EarlyStopping(
                 monitor="train_loss",
-                min_delta=0.01,
+                min_delta=1e-3,
                 patience=5,
                 verbose=True,
                 mode="min"
@@ -97,25 +100,30 @@ class ContextualizedNeighborhoodSelectionWrapper:
             self.model = model
         return self
 
-    def predict(self, C):
+    def predict_networks(self, C):
         betas, mus = self.trainer.predict_params(self.model, self.model.dataloader(C, np.zeros((len(C), self.p, self.p)), batch_size=10))
         return betas, mus
 
-    def mses(self, C, X):
-        betas, mus = self.predict(C)
-        mses = np.zeros(len(C))
+    def predict(self, C, X):
+        betas, mus = self.predict_networks(C)
+        X_preds = np.zeros_like(X)
         for i in range(X.shape[-1]):
-            residuals = X[:, i] - ((betas[:, i] * X).sum(axis=-1) + mus[:, i])
-            mses += residuals ** 2 / X.shape[-1]
-        return mses
+            X_preds[:, i] = (betas[:, i] * X).sum(axis=-1) + mus[:, i]
+        return X_preds
+
+    def mses(self, C, X):
+        X_preds = self.predict(C, X)
+        return np.mean((X - X_preds) ** 2, axis=1)
 
 
 class ContextualizedMarkovGraphWrapper(ContextualizedNeighborhoodSelectionWrapper):
-    def __init__(self):
+    def __init__(self, fit_intercept=False):
         super().__init__()
         self.subtype_kwargs = {
             'num_archetypes': 40,
             'encoder_type': 'mlp',
+            'metamodel_type': 'subtype',
+            'fit_intercept': fit_intercept,
             'encoder_kwargs': {'width': 200, 'layers': 3, 'link_fn': LINK_FUNCTIONS['identity']},
             'model_regularizer': REGULARIZERS['l1'](alpha=1e-5, mu_ratio=0.0)
         }
@@ -124,32 +132,33 @@ class ContextualizedMarkovGraphWrapper(ContextualizedNeighborhoodSelectionWrappe
 
 
 class ContextualizedCorrelationWrapper(ContextualizedNeighborhoodSelectionWrapper):
-    def __init__(self):
+    def __init__(self, fit_intercept=False):
+        super().__init__()
         self.subtype_kwargs = {
             'num_archetypes': 40,
             'encoder_type': 'mlp',
+            'metamodel_type': 'subtype',
+            'fit_intercept': fit_intercept,
             'encoder_kwargs': {'width': 200, 'layers': 3, 'link_fn': LINK_FUNCTIONS['identity']},
         }
         self.model_class = ContextualizedCorrelation
         self.trainer_class = CorrelationTrainer
 
-    def mses(self, C, X):
-        betas, mus = self.predict(C)
-        # for i in range(X.shape[-1]):
-        #     for j in range(X.shape[-1]):
-        #         tiled_xi = np.array([X[:, i] for _ in range(len(betas))])
-        #         tiled_xj = np.array([X[:, j] for _ in range(len(betas))])
-        #         residuals = tiled_xi - betas[:, i, j] * tiled_xj - mus[:, i, j]
-        #         mses += residuals ** 2 / (X.shape[-1] ** 2)
+    def predict(self, C, X):
         X_tiled = np.tile(X[:, :, np.newaxis], (1, 1, X.shape[-1]))
-        X_preds = (np.transpose(X_tiled, (0, 2, 1)) * betas) + mus  # todo: fix this
-        residuals = X_tiled - X_preds
-        mses = (residuals ** 2).mean(axis=(1, 2))
-        return mses
+        betas, mus = self.predict_networks(C)
+        X_preds = (np.transpose(X_tiled, (0, 2, 1)) * betas) + mus
+        return X_preds
+
+    def mses(self, C, X):
+        X_tiled = np.tile(X[:, :, np.newaxis], (1, 1, X.shape[-1]))
+        X_preds = self.predict(C, X)
+        return ((X_tiled - X_preds) ** 2).mean(axis=(1, 2))
 
 
 class ContextualizedBayesianNetworksWrapper(ContextualizedNeighborhoodSelectionWrapper):
-    def __init__(self):
+    def __init__(self, fit_intercept=False, project_to_dag=False):
+        super().__init__()
         self.subtype_kwargs = {
             'num_archetypes': 40,
             'encoder_kwargs': {
@@ -161,19 +170,24 @@ class ContextualizedBayesianNetworksWrapper(ContextualizedNeighborhoodSelectionW
         self.subtype_kwargs['archetype_loss_params']['num_archetypes'] = 40
         self.model_class = NOTMAD
         self.trainer_class = GraphTrainer
+        self.project_to_dag = project_to_dag
 
-    def predict(self, C):
+    def predict_networks(self, C):
         betas = self.trainer.predict_params(
             self.model,
             self.model.dataloader(C, np.zeros((len(C), self.p, self.p)), batch_size=10),
-            project_to_dag=True,
+            project_to_dag=self.project_to_dag,
         )
         mus = np.zeros((len(C), self.p))
         return betas, mus
 
-    def mses(self, C, X):
-        betas, _ = self.predict(C)
+    def predict(self, C, X):
+        betas, _ = self.predict_networks(C)
         X_preds = graph_utils.dag_pred_np(X, betas)
+        return X_preds
+
+    def mses(self, C, X):
+        X_preds = self.predict(C, X)
         residuals = X - X_preds
         mses = (residuals ** 2).mean(axis=-1)
         return mses
@@ -181,7 +195,7 @@ class ContextualizedBayesianNetworksWrapper(ContextualizedNeighborhoodSelectionW
 
 if __name__ == '__main__':
     C = np.random.normal(size=(100, 100))
-    X = np.random.normal(size=(100, 10))
+    X = np.random.normal(size=(100, 50))
     for wrapper in [
         ContextualizedNeighborhoodSelectionWrapper,
         ContextualizedMarkovGraphWrapper,
@@ -189,5 +203,11 @@ if __name__ == '__main__':
         ContextualizedBayesianNetworksWrapper
     ]:
         model = wrapper().fit(C, X, val_split=0)
-        model.predict(C)
+        model.predict_networks(C)
+        model.predict(C, X)
         print(model.mses(C, X).mean())
+
+    model = ContextualizedBayesianNetworksWrapper(project_to_dag=True).fit(C, X, val_split=0)
+    model.predict_networks(C)
+    model.predict(C, X)
+    print(model.mses(C, X).mean())
