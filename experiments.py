@@ -3,6 +3,7 @@ import dill as pickle
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import json
 import umap
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -24,11 +25,11 @@ from baselines import (
     NeighborhoodSelectionSKLearn,
     CorrelationNetworkSKLearn,
 )
-from dataloader import load_data, load_toy_data
+from dataloader import load_data, load_toy_data, DEFAULT_DATA_STATE
 
 
 experiments = {
-    'neighborhood': (NeighborhoodSelection, ContextualizedNeighborhoodSelectionWrapper),
+    'neighborhood': (NeighborhoodSelectionSKLearn, ContextualizedNeighborhoodSelectionWrapper),
     'markov': (MarkovNetwork, ContextualizedMarkovGraphWrapper),
     'correlation': (CorrelationNetworkSKLearn, ContextualizedCorrelationWrapper),
     'bayesian': (BayesianNetwork, ContextualizedBayesianNetworksWrapper),
@@ -38,44 +39,33 @@ experiments = {
 class NeighborhoodExperiment:
     def __init__(
             self,
-            base_dir=f'results/230424_neighborhoods',
-            include_disease_labels=True,
+            base_dir=f'results/test',
+            model='neighborhood',
+            data_state=DEFAULT_DATA_STATE,
             n_bootstraps=3,
             val_split=0.2,
             fit_intercept=False,
             load_saved=False,
-            dry_run=False,
+            verbose=False,
     ):
-        self.baseline_class = lambda: NeighborhoodSelection(fit_intercept=fit_intercept)
-        self.contextualized_class = lambda: ContextualizedNeighborhoodSelectionWrapper(fit_intercept=fit_intercept)
-        self.include_disease_labels = include_disease_labels
+        self.baseline_class = lambda: NeighborhoodSelection(fit_intercept=fit_intercept, verbose=verbose)
+        self.contextualized_class = lambda: ContextualizedNeighborhoodSelectionWrapper(fit_intercept=fit_intercept, verbose=verbose)
+        self.data_state = data_state
         self.n_bootstraps = n_bootstraps
         self.val_split = val_split
         self.fit_intercept = fit_intercept
         self.load_saved = load_saved
-        self.dry_run = dry_run
-        self.savedir = f'{base_dir}-disease_labels={include_disease_labels}-val_split={val_split}-bootstraps={n_bootstraps}-intercept={fit_intercept}-dryrun={dry_run}'
+        self.savedir = f'{base_dir}{model}-fit_intercept={fit_intercept}-val_split={val_split}-n_bootstraps={n_bootstraps}'
+        # self.savedir += '-'.join([f'{k}={v}' for k, v in data_state.items()])  # dirname too long
         os.makedirs(self.savedir, exist_ok=True)
+        with open(f'{self.savedir}/data_state.json', 'w') as f:
+            json.dump(self.data_state, f)
         self.mse_df_rows = []
         self.write_rows = lambda boot_i, tcga_ids, method, split, diseases, mses: self.mse_df_rows.extend(
             [(boot_i, tcga_id, method, split, disease, mse) for disease, tcga_id, mse in zip(diseases, tcga_ids, mses)])
-
-        self.data_state = {
-            'num_features': 100,
-            'tumor_only': False,
-            'hallmarks_only': False,
-            'single_hallmark': None,
-            'pretransform_norm': False,
-            'transform': 'pca',
-            'feature_selection': 'population',
-            'disease_labels': include_disease_labels,
-        }
-
-        if dry_run:
-            self.C_train, self.C_test, self.X_train, self.X_test, self.labels_train, self.labels_test, self.ids_train, self.ids_test, self.col_names = load_toy_data()
-        else:
-            self.C_train, self.C_test, self.X_train, self.X_test, self.labels_train, self.labels_test, self.ids_train, self.ids_test, self.col_names = load_data(
-                **self.data_state)
+        self.C_train, self.C_test, self.X_train, self.X_test, self.labels_train, self.labels_test, self.ids_train, self.ids_test, self.col_names = load_data(
+            **self.data_state)
+        print(self.C_train.shape, self.C_test.shape)
 
     def run_model(self, model_name, n_bootstraps, val_split, save_networks=False, load_saved=False):
         all_train_preds = []
@@ -204,7 +194,7 @@ class NeighborhoodExperiment:
         self.run_model('Population', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Cluster-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Disease-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
-        self.run_model('Contextualized', self.n_bootstraps, self.val_split, load_saved=self.load_saved, save_networks=True)
+        self.run_model('Contextualized', self.n_bootstraps, self.val_split, load_saved=self.load_saved) # save_networks=True)
         self.mse_df = pd.DataFrame(data=self.mse_df_rows, columns=['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease', 'MSE'])
         self.mse_df.to_csv(f'{self.savedir}/mse_df.csv', index=False)
         self.plot_mses('Train')
@@ -219,33 +209,74 @@ class NeighborhoodExperiment:
         total_mses.to_csv(f'{self.savedir}/total_mses.csv', index=False)
 
     def plot_mses(self, set_label):
-        # gets mses for each network
+        def remake_errorbars(mean_df, std_df, std_label, groupby=['Model', 'Disease']):
+            stds = std_df[std_df['Set'] == std_label].groupby(
+                groupby).std().reset_index()
+            means = mean_df.groupby(groupby).mean().reset_index()
+            means_upper = means.copy()
+            means_upper['MSE'] += stds['MSE']
+            means_lower = means.copy()
+            means_lower['MSE'] -= stds['MSE']
+            ret = pd.concat([means, means_upper, means_lower], axis=0)
+            return ret
+            # plot_rows = []
+            # for (i, (mean_row)), (_, (std_row)) in zip(means.iterrows(), stds.iterrows()):
+            #
+            #     plot_rows.extend([
+            #         [model, disease, mean],
+            #         [model, disease, mean + std],
+            #         [model, disease, mean - std]
+            #     ])
+            # return pd.DataFrame(data=plot_rows, columns=['Model', 'Disease', 'MSE'])
+
+        # Plot aggregate errors
+        mses_by_disease = self.mse_df.drop(columns='sample_id').groupby(
+            ['Bootstrap', 'Model', 'Set']).mean().reset_index()
+        set_df = mses_by_disease[mses_by_disease['Set'] == set_label]
+        if set_label == 'Train (Bootstrapped)':
+            plot_df = remake_errorbars(set_df, mses_by_disease, 'Train', groupby=['Model'])
+        elif set_label == 'Test (Bootstrapped)':
+            plot_df = remake_errorbars(set_df, mses_by_disease, 'Test', groupby=['Model'])
+        else:
+            plot_df = set_df
+        fig, ax = plt.subplots(figsize=(5, 5))
+        sns.barplot(
+            plot_df,
+            x='Model',
+            y='MSE',
+            order=['Population', 'Cluster-specific', 'Disease-specific', 'Contextualized'],
+            palette=['lightblue', 'deepskyblue', 'royalblue', 'orange'],
+            errorbar='sd',
+            capsize=0.05,
+            ax=ax
+        )
+        plt.xlim(-1, 4)
+        plt.ylim(0, 2.5)
+        ax.plot([-1, 5], [1, 1], linestyle='dashed', color='lightgrey')
+        labels = ['Population', 'Cluster-specific', 'Disease-specific', 'Contextualized']
+        ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
+        ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
+        plt.xlabel('Method', fontsize=18)
+        plt.ylabel('MSE', fontsize=18)
+        plt.title(f'{set_label} Errors', fontsize=22)
+        plt.tight_layout()
+        plt.savefig(f'{self.savedir}/mse_{set_label.lower()}.pdf', dpi=300)
+        plt.clf()
+
+        # Plot errors by diseases
         datapoints = \
             self.mse_df[(self.mse_df['Set'] == 'Train') & (self.mse_df['Model'] == 'Contextualized') & (
                         self.mse_df['Bootstrap'] == 0)][
                 'Disease'].value_counts().sort_index()
         mses_by_disease = self.mse_df.drop(columns='sample_id').groupby(
             ['Bootstrap', 'Model', 'Set', 'Disease']).mean().reset_index()
-        plot_df = mses_by_disease[mses_by_disease['Set'] == set_label]
-
-        def remake_errorbars(std_label):
-            stds = mses_by_disease[mses_by_disease['Set'] == std_label].groupby(
-                ['Model', 'Disease']).std().reset_index()
-            means = plot_df.groupby(['Model', 'Disease']).mean().reset_index()
-            plot_rows = []
-            for (i, (model, disease, mean)), (_, (_, _, std)) in zip(means.iterrows(), stds.iterrows()):
-                plot_rows.extend([
-                    [model, disease, mean],
-                    [model, disease, mean + std],
-                    [model, disease, mean - std]
-                ])
-            return pd.DataFrame(data=plot_rows, columns=['Model', 'Disease', 'MSE'])
-
+        set_df = mses_by_disease[mses_by_disease['Set'] == set_label]
         if set_label == 'Train (Bootstrapped)':
-            plot_df = remake_errorbars('Train')
+            plot_df = remake_errorbars(set_df, mses_by_disease, 'Train', groupby=['Model', 'Disease'])
         elif set_label == 'Test (Bootstrapped)':
-            plot_df = remake_errorbars('Test')
-
+            plot_df = remake_errorbars(set_df, mses_by_disease, 'Test', groupby=['Model', 'Disease'])
+        else:
+            plot_df = set_df
         n_diseases = len(plot_df['Disease'].unique())
         fig, ax = plt.subplots(figsize=(n_diseases + 5, 5))
         sns.barplot(
@@ -262,13 +293,10 @@ class NeighborhoodExperiment:
         plt.xlim(-1, n_diseases)
         plt.ylim(0, 2.5)
         ax.plot(list(range(-1, n_diseases + 1)), [1] * (n_diseases + 2), linestyle='dashed', color='lightgrey')
-
         labels = [f'{label} ({count})' for label, count in datapoints.iteritems()]
         ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
         ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
-
         ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
-
         plt.xlabel('Disease Type (# Training Samples)', fontsize=18)
         plt.ylabel('MSE', fontsize=18)
         plt.title(f'{set_label} Errors by Disease Type', fontsize=22)
@@ -280,25 +308,25 @@ class NeighborhoodExperiment:
 class MarkovExperiment(NeighborhoodExperiment):
     def __init__(
             self,
-            base_dir=f'results/230424_markov',
             fit_intercept=False,
+            verbose=False,
             **kwargs,
     ):
-        super().__init__(base_dir=base_dir, fit_intercept=fit_intercept, **kwargs)
-        self.baseline_class = lambda: MarkovNetwork(fit_intercept=fit_intercept)
-        self.contextualized_class = lambda: ContextualizedMarkovGraphWrapper(fit_intercept=fit_intercept)
+        super().__init__(model='markov', fit_intercept=fit_intercept, **kwargs)
+        self.baseline_class = lambda: MarkovNetwork(fit_intercept=fit_intercept, verbose=verbose)
+        self.contextualized_class = lambda: ContextualizedMarkovGraphWrapper(fit_intercept=fit_intercept, verbose=verbose)
 
 
 class CorrelationExperiment(NeighborhoodExperiment):
     def __init__(
             self,
-            base_dir=f'results/230424_correlation',
             fit_intercept=False,
+            verbose=False,
             **kwargs,
     ):
-        super().__init__(base_dir=base_dir, fit_intercept=fit_intercept, **kwargs)
-        self.baseline_class = lambda: CorrelationNetworkSKLearn(fit_intercept=fit_intercept)
-        self.contextualized_class = lambda: ContextualizedCorrelationWrapper(fit_intercept=fit_intercept)
+        super().__init__(model='correlation', fit_intercept=fit_intercept, verbose=verbose, **kwargs)
+        self.baseline_class = lambda: CorrelationNetworkSKLearn(fit_intercept=fit_intercept, verbose=verbose)
+        self.contextualized_class = lambda: ContextualizedCorrelationWrapper(fit_intercept=fit_intercept, verbose=verbose)
 
     def get_mses(self, X_preds, X_true):
         X_true = np.tile(np.expand_dims(X_true, axis=-1), (1, 1, X_true.shape[-1]))
@@ -309,13 +337,13 @@ class CorrelationExperiment(NeighborhoodExperiment):
 class BayesianExperiment(NeighborhoodExperiment):
     def __init__(
             self,
-            base_dir=f'results/230424_bayesian',
             fit_intercept=False,
             project_to_dag=False,
+            verbose=False,
             **kwargs,
     ):
-        super().__init__(base_dir=base_dir, fit_intercept=False, **kwargs)
-        self.baseline_class = lambda: BayesianNetwork(fit_intercept=False, project_to_dag=project_to_dag)
-        self.contextualized_class = lambda: ContextualizedBayesianNetworksWrapper(fit_intercept=False, project_to_dag=project_to_dag)
+        super().__init__(model='bayesian', fit_intercept=False, verbose=verbose, **kwargs)
+        self.baseline_class = lambda: BayesianNetwork(fit_intercept=False, project_to_dag=project_to_dag, verbose=verbose)
+        self.contextualized_class = lambda: ContextualizedBayesianNetworksWrapper(fit_intercept=False, project_to_dag=project_to_dag, verbose=verbose)
         self.project_to_dag = project_to_dag
-        self.savedir = f'{base_dir}-disease_labels={self.include_disease_labels}-val_split={self.val_split}-bootstraps={self.n_bootstraps}-intercept={self.fit_intercept}-project_to_dag={project_to_dag}-dryrun={self.dry_run}'
+        self.savedir += f'-project_to_dag={project_to_dag}'

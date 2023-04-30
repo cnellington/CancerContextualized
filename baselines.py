@@ -178,13 +178,15 @@ class NOTEARS(NeighborhoodSelectionModule):
 
 
 class NeighborhoodSelection:
-    def __init__(self, **kwargs):
+    def __init__(self, verbose=False, **kwargs):
         self.model_class = NeighborhoodSelectionModule
         self.kwargs = kwargs
+        self.verbose = verbose
 
     def fit(self, C, X, n_bootstraps=1, val_split=0.2):
         self.p = X.shape[-1]
         self.models = []
+        self.trainers = []
         for boot_i in range(n_bootstraps):
             np.random.seed(boot_i)
             if n_bootstraps > 1:
@@ -212,20 +214,20 @@ class NeighborhoodSelection:
                     verbose=True,
                     mode="min"
                 )
-                self.trainer = pl.Trainer(
+                trainer = pl.Trainer(
                     max_epochs=100,
                     accelerator='auto',
                     devices=1,
                     callbacks=[es_callback, checkpoint_callback],
-                    enable_progress_bar=False,
-                    enable_model_summary=False,
+                    enable_progress_bar=self.verbose,
                 )
-                self.trainer.fit(model, train_dataset, val_dataset)
+                trainer.fit(model, train_dataset, val_dataset)
 
                 # Get best checkpoint by val_loss
                 best_checkpoint = torch.load(checkpoint_callback.best_model_path)
                 model.load_state_dict(best_checkpoint['state_dict'])
                 self.models.append(model)
+                self.trainers.append(trainer)
             else:
                 train_dataset = model.dataloader(X_boot)
                 checkpoint_callback = ModelCheckpoint(
@@ -240,20 +242,20 @@ class NeighborhoodSelection:
                     verbose=True,
                     mode="min"
                 )
-                self.trainer = pl.Trainer(
+                trainer = pl.Trainer(
                     max_epochs=100,
                     accelerator='auto',
                     devices=1,
                     callbacks=[es_callback, checkpoint_callback],
-                    enable_progress_bar=False,
-                    enable_model_summary=False,
+                    enable_progress_bar=self.verbose,
                 )
-                self.trainer.fit(model, train_dataset)
+                trainer.fit(model, train_dataset)
 
                 # Get best checkpoint by train_loss
                 best_checkpoint = torch.load(checkpoint_callback.best_model_path)
                 model.load_state_dict(best_checkpoint['state_dict'])
                 self.models.append(model)
+                self.trainers.append(trainer)
         return self
 
     def predict_networks(self, C, avg_bootstraps=True):
@@ -271,8 +273,8 @@ class NeighborhoodSelection:
 
     def predict(self, C, X, avg_bootstraps=True):
         X_preds = []
-        for model in self.models:
-            X_pred = torch.cat(self.trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
+        for trainer, model in zip(self.trainers, self.models):
+            X_pred = torch.cat(trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
             X_preds.append(X_pred)
         if avg_bootstraps:
             return np.mean(X_preds, axis=0)
@@ -294,8 +296,8 @@ class CorrelationNetwork(NeighborhoodSelection):
 
     def predict(self, C, X, avg_bootstraps=True):
         X_preds_tiled = []
-        for model in self.models:
-            X_pred_tiled = torch.cat(self.trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
+        for trainer, model in zip(self.trainers, self.models):
+            X_pred_tiled = torch.cat(trainer.predict(model, model.dataloader(X)), dim=0).detach().numpy()
             X_preds_tiled.append(X_pred_tiled)
         if avg_bootstraps:
             return np.mean(X_preds_tiled, axis=0)
@@ -350,7 +352,7 @@ class BayesianNetwork(NeighborhoodSelection):
 
 
 class CorrelationNetworkSKLearn:
-    def __init__(self, fit_intercept=False):
+    def __init__(self, fit_intercept=False, verbose=None):
         self.fit_intercept = fit_intercept
 
     def fit(self, C, X, **kwargs):
@@ -386,7 +388,7 @@ class CorrelationNetworkSKLearn:
     
 
 class NeighborhoodSelectionSKLearn:
-    def __init__(self, fit_intercept=False, alpha=1e-3, l1_ratio=1.0):
+    def __init__(self, fit_intercept=False, alpha=1e-3, l1_ratio=1.0, verbose=None):
         self.alpha = alpha
         self.l1_ratio = l1_ratio
         self.fit_intercept = fit_intercept
@@ -492,7 +494,7 @@ if __name__ == '__main__':
                               (NeighborhoodSelectionSKLearn, 'NeighborhoodSKLearn'),
                               (CorrelationNetworkSKLearn, 'CorrelationSKLearn'),
                               ]:
-        model = model_class(fit_intercept=False).fit(C, X, val_split=0)
+        model = model_class(fit_intercept=False, verbose=True).fit(C, X, val_split=0)
         model.predict(C, X)
         model.predict_networks(C)
         print(name, model.mses(C, X).mean(), model.mses(X_test, X_test).mean())
