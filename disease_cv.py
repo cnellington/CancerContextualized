@@ -1,6 +1,6 @@
 import os
 import numpy as np
-import pickle as pkl
+#import pickle as pkl
 import pandas as pd
 from disease_dataloader import disease_load_data, disease_data_transformation
 
@@ -67,7 +67,7 @@ def load_disease_data(data_state):
         #     }
 
         data_state["disease_label"] = d
-        C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, col_names = disease_data_transformation(**data_state)
+        C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, labels_train, labels_test, col_names = disease_data_transformation(**data_state)
 
         # add code here for training model and calculating performance metrics...
     

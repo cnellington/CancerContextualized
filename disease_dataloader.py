@@ -1,5 +1,5 @@
 import os
-import dill as pickle
+import pickle as pkl
 import numpy as np
 import pandas as pd
 import warnings
@@ -27,7 +27,7 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full)
     if not os.path.exists('./disease_specific_data'):
         os.makedirs('./disease_specific_data')
 
-    def train_test_disease (covars, tcga_ids, C, X, disease, tnames_full):
+    def train_test_disease (labels, covars, tcga_ids, C, X, disease, tnames_full):
         # get the context info first
         train_idx = covars[covars['disease_type'] != disease].index.values
         test_idx = covars[covars['disease_type'] == disease].index.values
@@ -43,17 +43,23 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full)
         assert x_train.shape[0] == c_train.shape[0], "Error: train expression and context do not have the same number of samples"
         assert x_test.shape[0] == c_test.shape[0], "Error: test expression and context do not have the same number of samples"
 
+        # get the tcga_ids
         tcga_ids_train = tcga_ids[train_idx]
         tcga_ids_test = tcga_ids[test_idx]
 
         assert x_train.shape[0] == tcga_ids_train.shape[0], "Error: train expression and tcga_ids do not have the same number of samples"
         assert x_test.shape[0] == tcga_ids_test.shape[0], "Error: test expression and tcga_ids do not have the same number of samples"
 
+        # get the labels:
+        labels_train, labels_test = labels[train_idx], labels[test_idx]
+        assert x_train.shape[0] == labels_train.shape[0], "Error: train expression and labels do not have the same number of samples"
+        assert x_test.shape[0] == labels_test.shape[0], "Error: test expression and labels do not have the same number of samples"
+
         # save the files to a pickle file
         if not os.path.exists('./disease_specific_data'):
             os.makedirs('./disease_specific_data')
         with open(f'./disease_specific_data/data_{disease}.pkl', 'wb') as f:
-            pickle.dump([c_train, c_test, x_train, x_test, tcga_ids_train, tcga_ids_test, tnames_full], f)
+            pkl.dump([c_train, c_test, x_train, x_test, tcga_ids_train, tcga_ids_test, labels_train, labels_test, tnames_full], f)
 
     # if interested in one disease
     if disease != None:
@@ -61,11 +67,11 @@ def disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full)
             print(f"Error: {disease} is not a valid disease name")
             quit()
         print("Processing disease: ", disease)
-        train_test_disease(covars, tcga_ids, C, X, disease, tnames_full)
+        train_test_disease(labels, covars, tcga_ids, C, X, disease, tnames_full)
     else:
         for d in np.unique(labels):
             print("Processing disease: ", d)
-            train_test_disease(covars, tcga_ids, C, X, d, tnames_full)
+            train_test_disease(labels, covars, tcga_ids, C, X, d, tnames_full)
 
 
 #%% Input parameters
@@ -197,7 +203,6 @@ def disease_load_data(
     tcga_ids = covars['sample_id'].values
 
     disease_specific_split(labels, covars, tcga_ids, C, X, disease, tnames_full)
-    return tnames_full
 
 #%% normalize data
 
@@ -216,9 +221,9 @@ def disease_data_transformation(num_features, pretransform_norm, transform, feat
         ndarray: seven ndarrays for the train and testing datasets
     """
 
-    #open the pickle filee
+    #open the pickle file
     with open('./disease_specific_data/data_' + disease_label + '.pkl', 'rb') as f:
-        C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, tnames_full = pkl.load(f)
+        C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, labels_train, labels_test, tnames_full = pkl.load(f)
     
     print(f"Finished loading data for {disease_label}, now transforming...")
     print(f"C_train: {C_train.shape}, C_test: {C_test.shape}")
@@ -301,5 +306,5 @@ def disease_data_transformation(num_features, pretransform_norm, transform, feat
     print(f"Features: {X_train.shape} {X_test.shape}")
     print(f"transcript names: {tnames_full.shape}")
 
-    return C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, tnames_full
+    return C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, labels_train, labels_test, tnames_full
 
