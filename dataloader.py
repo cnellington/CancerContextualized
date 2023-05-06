@@ -21,23 +21,69 @@ def load_toy_data(
 ):
     C = np.random.normal(0, 1, (num_samples, num_contexts))
     X = np.random.normal(0, 1, (num_samples, num_features))
-    labels = np.random.choice(num_labels, size=num_samples)
-    ids = np.arange(num_samples)
-    C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
+    labels = np.random.choice(num_labels, size=num_samples).astype(str)
+    ids = np.arange(num_samples).astype(str)
     col_names = [f'feature_{i}' for i in range(num_features)]
+    C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
+    C_mean, C_std = C_train.mean(axis=0), C_train.std(axis=0)
+    X_mean, X_std = X_train.mean(axis=0), X_train.std(axis=0)
+    C_train = (C_train - C_mean) / C_std
+    C_test = (C_test - C_mean) / C_std
+    X_train = (X_train - X_mean) / X_std
+    X_test = (X_test - X_mean) / X_std
     return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names
 
 
+DEFAULT_DATA_STATE = {
+    'num_features': 50,                 # number of expression features to consider
+    'tumor_only': False,                # remove healthy normal tissue samples if True
+    'hallmarks_only': False,            # reduce COSMIC genes to only the intersection between COSMIC and Hallmarks
+    'single_hallmark': None,            # reduce genes to a single hallmark set
+    'pretransform_norm': False,         # normalize before the feature transformation
+    'transform': None,                  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark avg'
+    'feature_selection': 'population',  # select genetic features according to population variance (population) or weighted disease-specific variance (disease)
+    'disease_labels': True,             # include disease labels and primary site information in covariates
+    'features_to_covars': -1,           # -1 to ignore, or a positive number of genomic features to add to covariates
+    'remove_covar_features': False,     # remove genomic features that have been added to covariates
+    'covar_projection': -1,             # -1 to ignore, or provide a positive n_components to project SNV and SCNA covariates using PCA to reduce dimensionality
+    'no_test': True,                    # Create a new "test" set from the training data to avoid hyperparam tuning on the real test set
+    'dry_run': False,                   # Return a small subset of the data for testing
+}
+
+
 def load_data(
-    num_features=50,        # number of expression features to consider
-    tumor_only=False,        # remove healthy samples
-    hallmarks_only=False,    # reduce COSMIC genes to only the intersection between COSMIC and Hallmarks
-    single_hallmark=None,    # reduce genes to a single hallmark set
-    pretransform_norm=False, # normalize before the feature transformation
-    transform='pca',          # None, or transform expression using 'pca' or 'hallmark avg'
-    feature_selection='population',   # select genetic features according to population variance (population) or weighted disease-specific variance (disease)
-    disease_labels=True,
+        num_features=DEFAULT_DATA_STATE['num_features'],
+        tumor_only=DEFAULT_DATA_STATE['tumor_only'],
+        hallmarks_only=DEFAULT_DATA_STATE['hallmarks_only'],
+        single_hallmark=DEFAULT_DATA_STATE['single_hallmark'],
+        pretransform_norm=DEFAULT_DATA_STATE['pretransform_norm'],
+        transform=DEFAULT_DATA_STATE['transform'],
+        feature_selection=DEFAULT_DATA_STATE['feature_selection'],
+        disease_labels=DEFAULT_DATA_STATE['disease_labels'],
+        features_to_covars=DEFAULT_DATA_STATE['features_to_covars'],
+        remove_covar_features=DEFAULT_DATA_STATE['remove_covar_features'],
+        covar_projection=DEFAULT_DATA_STATE['covar_projection'],
+        no_test=DEFAULT_DATA_STATE['no_test'],
+        dry_run=DEFAULT_DATA_STATE['dry_run'],
 ):
+    if dry_run:
+        num_samples = 100
+        num_contexts = 10
+        num_labels = 2
+        C = np.random.normal(0, 1, (num_samples, num_contexts))
+        X = np.random.normal(0, 1, (num_samples, num_features))
+        labels = np.random.choice(num_labels, size=num_samples).astype(str)
+        ids = np.arange(num_samples).astype(str)
+        col_names = [f'feature_{i}' for i in range(num_features)]
+        C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
+        C_mean, C_std = C_train.mean(axis=0), C_train.std(axis=0)
+        X_mean, X_std = X_train.mean(axis=0), X_train.std(axis=0)
+        C_train = (C_train - C_mean) / C_std
+        C_test = (C_test - C_mean) / C_std
+        X_train = (X_train - X_mean) / X_std
+        X_test = (X_test - X_mean) / X_std
+        return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names
+
     # Get Data
     data_dir = './data/'
     covariate_files = [
@@ -130,11 +176,13 @@ def load_data(
             num_header = col+"_numeric"
             numeric_headers.append(num_header)
             context_df[num_header] = num_col
+            col_count += 1
         else:
             # Make one-hot encoded dummy variables for categorical variables
             dummies = pd.get_dummies(context_df[col], prefix=col)
             numeric_headers += dummies.columns.tolist()
             context_df = context_df.merge(dummies, left_index=True, right_index=True)
+            col_count += dummies.shape[-1]
     context_df = context_df.drop(columns=covars.columns)
     context_df = context_df.copy()
     print(f"df contains NaN: {context_df.isnull().values.any()}")
@@ -170,6 +218,20 @@ def load_data(
     X_train, X_test = X[train_idx], X[test_idx]
     labels_train, labels_test = labels[train_idx], labels[test_idx]
     tcga_ids_train, tcga_ids_test = tcga_ids[train_idx], tcga_ids[test_idx]
+    if no_test:
+        train_idx, val_idx = train_test_split(range(len(X_train)), test_size=0.2, random_state=0)
+        C_train, C_test = C_train[train_idx], C_train[val_idx]
+        X_train, X_test = X_train[train_idx], X_train[val_idx]
+        labels_train, labels_test = labels_train[train_idx], labels_train[val_idx]
+        tcga_ids_train, tcga_ids_test = tcga_ids_train[train_idx], tcga_ids_train[val_idx]
+
+    if covar_projection > 0:
+        covar_pca = PCA(n_components=covar_projection, random_state=1).fit(C_train[:, transform_i:])
+        C_train_reduced = covar_pca.transform(C_train[:, transform_i:])
+        C_train = np.concatenate([C_train[:, :transform_i], C_train_reduced], axis=1)
+        C_test_reduced = covar_pca.transform(C_test[:, transform_i:])
+        C_test = np.concatenate([C_test[:, :transform_i], C_test_reduced], axis=1)
+
     
     # Pre-transformation normalization
     if pretransform_norm:
@@ -239,7 +301,14 @@ def load_data(
     X_test -= X_means
     X_train /= X_stds
     X_test /= X_stds
-        
+
+    if features_to_covars > 0:
+        C_train = np.concatenate([C_train, X_train[:, :features_to_covars]], axis=1)
+        C_test = np.concatenate([C_test, X_test[:, :features_to_covars]], axis=1)
+        if remove_covar_features:
+            X_train = X_train[:, features_to_covars:]
+            X_test = X_test[:, features_to_covars:]
+            tnames_full = tnames_full[features_to_covars:]
 
     print(f"Covariates: {C_train.shape} {C_test.shape} {len(C)}")
     print(f"Features: {X_train.shape} {X_test.shape} {len(X)}")

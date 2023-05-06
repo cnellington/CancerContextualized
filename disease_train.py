@@ -6,6 +6,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import torch
 from sklearn.cluster import KMeans
+from experiments import NeighborhoodExperiment, CorrelationExperiment, MarkovExperiment, BayesianExperiment
 from contextualized import save, load
 from models import (
     ContextualizedNeighborhoodSelectionWrapper,
@@ -22,8 +23,12 @@ from baselines import (
     NeighborhoodSelectionSKLearn,
     CorrelationNetworkSKLearn,
 )
+#%%
 
+C_boot, C_train, C_test = labels_train[boot_idx], labels_train, labels_test
+model = ContextualizedNeighborhoodSelectionWrapper().fit(C_boot, X_boot, val_split=0.2)
 
+#%%
 # experiment = 'neighborhood'
 # n_bootstraps = 3
 # val_split = 0.2
@@ -32,6 +37,7 @@ def run_experiment(
     n_bootstraps,
     val_split,
     load_saved,
+    train_test_data,
 ):
     experiments = {
         'neighborhood': (NeighborhoodSelectionSKLearn, ContextualizedNeighborhoodSelectionWrapper),
@@ -40,6 +46,7 @@ def run_experiment(
         'bayesian': (BayesianNetwork, ContextualizedBayesianNetworksWrapper),
     }
 
+    C_train, C_test, X_train, X_test, ids_train, ids_test, labels_train, labels_test, col_names = train_test_data['C_train'], train_test_data['C_test'], train_test_data['X_train'], train_test_data['X_test'], train_test_data['tcga_ids_train'], train_test_data['tcga_ids_test'], train_test_data['labels_train'], train_test_data['labels_test'], train_test_data['col_names']
     # not sure what val_split is as of now
     baseline_class, contextualized_class = experiments[experiment]
     savedir = f'results/saved_models/{experiment}-val_split={val_split}-bootstraps={n_bootstraps}'
@@ -66,15 +73,15 @@ def run_experiment(
         print('Training population model')
         if load_saved:
             population_model = load(f'{savedir}/population_boot{boot_i}')
-        else:
-            population_model = baseline_class().fit(X_boot, val_split=val_split)
+        else:  # added C_boot as an parameter 
+            population_model = baseline_class().fit(np.zeros_like(C_boot), X_boot, val_split=val_split)
             save(population_model, f'{savedir}/population_boot{boot_i}')
         all_pop.append(population_model)
-        boot_mses = population_model.mses(X_boot)
+        boot_mses = population_model.mses(np.zeros_like(C_boot), X_boot)
         write_rows(boot_i, ids_train[boot_idx], 'Population', 'Train', labels_train[boot_idx], boot_mses)
-        train_mses = population_model.mses(X_train)
+        train_mses = population_model.mses(np.zeros_like(C_train), X_train)
         write_rows(boot_i, ids_train, 'Population', 'Full Trainset', labels_train, train_mses)
-        test_mses = population_model.mses(X_test)
+        test_mses = population_model.mses(np.zeros_like(C_test), X_test)
         write_rows(boot_i, ids_test, 'Population', 'Test', labels_test, test_mses)
         print(
             boot_mses.mean(),
@@ -85,18 +92,18 @@ def run_experiment(
         # Learn context-clusters and learn a correlation model for each cluster
         print('Training clustered model')
         kmeans = KMeans(n_clusters=len(np.unique(labels_train)), random_state=0).fit(C_boot)
-        cluster_labels_train, cluster_labels_test = kmeans.predict(C_train), kmeans.predict(C_test)
+        cluster_labels_boot, cluster_labels_train, cluster_labels_test = kmeans.predict(C_boot), kmeans.predict(C_train), kmeans.predict(C_test)
         if load_saved:
             clustered_model = load(f'{savedir}/clustered_boot{boot_i}')
         else:
-            clustered_model = GroupedNetworks(baseline_class).fit(X_boot, cluster_labels_train[boot_idx], val_split=val_split)
+            clustered_model = GroupedNetworks(baseline_class).fit(cluster_labels_boot, X_boot)
             save(clustered_model, f'{savedir}/clustered_boot{boot_i}')
         all_cluster.append(clustered_model)
-        boot_mses = clustered_model.mses(X_boot, cluster_labels_train[boot_idx])
+        boot_mses = clustered_model.mses(cluster_labels_boot, X_boot)
         write_rows(boot_i, ids_train[boot_idx], 'Cluster-specific', 'Train', labels_train[boot_idx], boot_mses)
-        train_mses = clustered_model.mses(X_train, cluster_labels_train)
+        train_mses = clustered_model.mses(cluster_labels_train, X_train)
         write_rows(boot_i, ids_train, 'Cluster-specific', 'Full Trainset', labels_train, train_mses)
-        test_mses = clustered_model.mses(X_test, cluster_labels_test)
+        test_mses = clustered_model.mses(cluster_labels_test, X_test)
         write_rows(boot_i, ids_test, 'Cluster-specific', 'Test', labels_test, test_mses)
         print(
             boot_mses.mean(),

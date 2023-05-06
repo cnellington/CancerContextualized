@@ -3,6 +3,7 @@ import numpy as np
 #import pickle as pkl
 import pandas as pd
 from disease_dataloader import disease_load_data, disease_data_transformation
+from disease_train import run_experiment
 
 #%% Helper FUnctions
 
@@ -68,6 +69,18 @@ def load_disease_data(data_state):
 
         data_state["disease_label"] = d
         C_train, C_test, X_train, X_test, tcga_ids_train, tcga_ids_test, labels_train, labels_test, col_names = disease_data_transformation(**data_state)
+        train_test_data = {
+            'C_train': C_train,
+            'C_test': C_test,
+            'X_train': X_train,
+            'X_test': X_test,
+            'tcga_ids_train': tcga_ids_train,
+            'tcga_ids_test': tcga_ids_test,
+            'labels_train': labels_train,
+            'labels_test': labels_test,
+            'col_names': col_names,
+        }
+        run_experiment(experiment = "neighborhood", n_bootstraps = 3, val_split = 0.2, load_saved = False, train_test_data = train_test_data)
 
         # add code here for training model and calculating performance metrics...
     
