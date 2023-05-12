@@ -58,6 +58,7 @@ def load_disease_data(data_state):
 
     check_disease_data(labels) 
 
+    test_df_list = []
     for d in labels:
         # data_state = {
         #         'num_features': 50,
@@ -80,8 +81,8 @@ def load_disease_data(data_state):
             'labels_test': labels_test,
             'col_names': col_names,
         }
-        run_experiment(experiment = "neighborhood", n_bootstraps = 3, val_split = 0.2, load_saved = False, train_test_data = train_test_data)
-
+        mse_df, test_df = run_experiment(experiment = "neighborhood", n_bootstraps = 3, val_split = 0.2, load_saved = False, train_test_data = train_test_data, disease = d)
+        test_df_list.append(test_df)
         # add code here for training model and calculating performance metrics...
     
 
