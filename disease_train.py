@@ -191,7 +191,7 @@ def run_experiment(
             labels = [f'{label} ({datapoints[datapoints.index == label].values[0]})']
             fontsize = 10
         ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
-        ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
+        #ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
 
         ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
 
