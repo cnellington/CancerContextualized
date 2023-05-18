@@ -13,6 +13,10 @@ __pycache__/
 *.ipynb_checkpoints
 *.ckpt
 *.yaml
+*.vscode
+*.json
+*.sh
+*.out
 
 # Distribution / packaging
 .Python
