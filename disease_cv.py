@@ -86,12 +86,29 @@ def plot_concat_mse(plot_df):
     plt.title('Test Errors by Disease Type (Disease Specific CV)', fontsize=14)
     plt.tight_layout()
 
-    #plt.savefig(f'./results/test.pdf', dpi=300)
+    plt.savefig(f'./results/test_disease.pdf', dpi=300)
     plt.show()
     plt.clf()
 
+def plot_average_mse(plot_df):
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.barplot(
+        plot_df,
+        x='Model',
+        y='MSE',
+        hue_order=['Population', 'Cluster-specific', 'Contextualized'],
+        palette = ['lightblue', 'deepskyblue', 'orange'],
+        errorbar='sd',
+        capsize=0.05,
+    #     edgecolor='black',
+        ax=ax
+    )
+    plt.title("Test Errors by Model (Disease Specific CV)", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f'./results/test_model.pdf', dpi=300)
+    plt.show()
 
-
+    
 
 #%%
 def load_disease_data(data_state, experiment_params):
@@ -130,11 +147,12 @@ def load_disease_data(data_state, experiment_params):
                                  train_test_data = train_test_data, disease = d)
         test_df_list.append(test_df)
     
-
     test_df_concat = pd.concat(test_df_list)
     test_df_concat.to_csv('./results/test_df_concat.csv', index = False) # save the concatenated file to directory
     plot_concat_mse(test_df_concat) # plot the concatenated file
+    plot_average_mse(test_df_concat) # plot the average mse for each model
     
+
 
 #%%
 data_state = {

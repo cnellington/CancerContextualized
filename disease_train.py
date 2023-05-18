@@ -216,7 +216,7 @@ def run_experiment(
     total_mses.columns = [' '.join(col) for col in total_mses.columns]
     total_mses.to_csv(f'{savedir}/total_mses.csv', index=False)
 
-    return mse_df, test_df
+    return test_df
     # w_train = np.array([contextualized.predict(C_train)[0] for contextualized in all_contextualized])
     # w_train = np.mean(w_train, axis=0)
     # w_train = w_train.reshape((w_train.shape[0], w_train.shape[1] * w_train.shape[2]))

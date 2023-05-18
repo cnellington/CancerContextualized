@@ -1,6 +1,0 @@
-Warning: When compiling code please add the following flags to nvcc:
-         -gencode arch=compute_35,code=[compute_35,sm_35] \
-         -gencode arch=compute_61,code=[compute_61,sm_61] 
-         -gencode arch=compute_70,code=[compute_70,sm_70] 
-/ihome/djishnu/xiaoh/mambaforge/envs/CanContext1/lib/python3.10/site-packages/sklearn/cluster/_kmeans.py:870: FutureWarning: The default value of `n_init` will change from 10 to 'auto' in 1.4. Set the value of `n_init` explicitly to suppress the warning
-  warnings.warn(

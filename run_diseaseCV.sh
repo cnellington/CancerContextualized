@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=cancontext
 # partition (queue) declaration
-# SBATCH -t 3-00:00
+#SBATCH -t 3-00:00
 #SBATCH --partition=dept_cpu
 #SBATCH --mail-user=xiaoh@pitt.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
