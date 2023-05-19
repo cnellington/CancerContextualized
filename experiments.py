@@ -39,12 +39,13 @@ experiments = {
 class NeighborhoodExperiment:
     def __init__(
             self,
-            base_dir=f'results/test',
+            base_dir=f'results/test/',
             model='neighborhood',
             data_state=DEFAULT_DATA_STATE,
             n_bootstraps=3,
             val_split=0.2,
             fit_intercept=False,
+            save_models=True,
             load_saved=False,
             verbose=False,
     ):
@@ -54,18 +55,30 @@ class NeighborhoodExperiment:
         self.n_bootstraps = n_bootstraps
         self.val_split = val_split
         self.fit_intercept = fit_intercept
+        self.save_models = save_models
         self.load_saved = load_saved
         self.savedir = f'{base_dir}{model}-fit_intercept={fit_intercept}-val_split={val_split}-n_bootstraps={n_bootstraps}'
         # self.savedir += '-'.join([f'{k}={v}' for k, v in data_state.items()])  # dirname too long
         os.makedirs(self.savedir, exist_ok=True)
         with open(f'{self.savedir}/data_state.json', 'w') as f:
             json.dump(self.data_state, f)
-        self.mse_df_rows = []
-        self.write_rows = lambda boot_i, tcga_ids, method, split, diseases, mses: self.mse_df_rows.extend(
-            [(boot_i, tcga_id, method, split, disease, mse) for disease, tcga_id, mse in zip(diseases, tcga_ids, mses)])
         self.C_train, self.C_test, self.X_train, self.X_test, self.labels_train, self.labels_test, self.ids_train, self.ids_test, self.col_names = load_data(
             **self.data_state)
         print(self.C_train.shape, self.C_test.shape)
+        self.network_cols = np.array([[f'{col1}-{col2}' for col2 in self.col_names] for col1 in self.col_names]).reshape((len(self.col_names) ** 2,))
+        self.mse_df_rows = []
+        self.mse_df_cols = ['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease', 'MSE']
+        self.mse_by_feature_rows = []
+        self.mse_by_feature_cols = ['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease'] + self.col_names.tolist()
+
+    def write_rows(self, boot_i, tcga_ids, method, split, diseases, all_residuals):
+        for disease, tcga_id, residuals in zip(diseases, tcga_ids, all_residuals):
+            self.mse_df_rows.append([boot_i, tcga_id, method, split, disease, residuals.mean()])
+        self.mse_by_feature_rows.append([boot_i, 'ID', method, split, 'disease'] + all_residuals.mean(axis=0).flatten().tolist())
+
+    def get_mses(self, X_preds, X_true):
+        assert X_preds.shape == X_true.shape
+        return (X_preds - X_true) ** 2
 
     def run_model(self, model_name, n_bootstraps, val_split, save_networks=False, load_saved=False):
         all_train_preds = []
@@ -95,11 +108,12 @@ class NeighborhoodExperiment:
             # Learn a single correlation model representing the whole population
             print(f'Training {model_name} model')
             if load_saved:
-                model = load(f'{self.savedir}/saved_models/{model_name}_boot{boot_i}')
+                model = load(f'{self.savedir}/saved_models/{model_name}_boot{boot_i}.pt')
             else:
                 model.fit(C_boot, X_boot, val_split=val_split)
-                os.makedirs(f'{self.savedir}/saved_models/', exist_ok=True)
-                save(model, f'{self.savedir}/saved_models/{model_name}_boot{boot_i}')
+                if self.save_models:
+                    os.makedirs(f'{self.savedir}/saved_models/', exist_ok=True)
+                    save(model, f'{self.savedir}/saved_models/{model_name}_boot{boot_i}.pt')
             all_models.append(model)
             boot_preds = model.predict(C_boot, X_boot)
             boot_mses = self.get_mses(boot_preds, X_boot)
@@ -125,10 +139,6 @@ class NeighborhoodExperiment:
         self.write_rows("avg", self.ids_test, model_name, 'Test (Bootstrapped)', self.labels_test, test_mses)
         if save_networks:
             self.export_networks(all_models)
-
-    def get_mses(self, X_preds, X_true):
-        assert X_preds.shape == X_true.shape
-        return np.mean((X_preds - X_true) ** 2, axis=1)
 
     def process_networks(self, networks):
         # do any processing necessary before using models
@@ -195,8 +205,10 @@ class NeighborhoodExperiment:
         self.run_model('Cluster-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Disease-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Contextualized', self.n_bootstraps, self.val_split, load_saved=self.load_saved) # save_networks=True)
-        self.mse_df = pd.DataFrame(data=self.mse_df_rows, columns=['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease', 'MSE'])
+        self.mse_df = pd.DataFrame(data=self.mse_df_rows, columns=self.mse_df_cols)
         self.mse_df.to_csv(f'{self.savedir}/mse_df.csv', index=False)
+        self.mse_by_feature_df = pd.DataFrame(data=self.mse_by_feature_rows, columns=self.mse_by_feature_cols)
+        self.mse_by_feature_df.to_csv(f'{self.savedir}/mse_by_feature.csv', index=False)
         self.plot_mses('Train')
         self.plot_mses('Test')
         self.plot_mses('Full Trainset')
@@ -205,7 +217,7 @@ class NeighborhoodExperiment:
         total_mses = self.mse_df.groupby(['Bootstrap', 'Model', 'Set']).mean().reset_index()
         total_mses = total_mses.groupby(['Model', 'Set']).agg({'MSE': ['mean', 'std']}).reset_index()[
             ['Model', 'Set', 'MSE']]
-        total_mses.columns = [' '.join(col) for col in total_mses.columns]
+        total_mses.columns = [' '.join(col).strip(' ') for col in total_mses.columns]
         total_mses.to_csv(f'{self.savedir}/total_mses.csv', index=False)
 
     def plot_mses(self, set_label):
@@ -248,7 +260,7 @@ class NeighborhoodExperiment:
             palette=['lightblue', 'deepskyblue', 'royalblue', 'orange'],
             errorbar='sd',
             capsize=0.05,
-            ax=ax
+            ax=ax,
         )
         plt.xlim(-1, 4)
         plt.ylim(0, 2.5)
@@ -262,6 +274,39 @@ class NeighborhoodExperiment:
         plt.tight_layout()
         plt.savefig(f'{self.savedir}/mse_{set_label.lower()}.pdf', dpi=300)
         plt.clf()
+
+        # Plot relative errors to contextualized
+        plot_df['Relative MSE'] = plot_df[plot_df['Model'] == 'Contextualized']['MSE'].mean() / plot_df['MSE']
+        fig, ax = plt.subplots(figsize=(5, 5))
+        sns.barplot(
+            plot_df,
+            x='Model',
+            y='Relative MSE',
+            order=['Population', 'Cluster-specific', 'Disease-specific', 'Contextualized'],
+            palette=['lightblue', 'deepskyblue', 'royalblue', 'orange'],
+            errorbar='sd',
+            capsize=0.05,
+            ax=ax,
+        )
+        plt.xlim(-1, 4)
+        plt.ylim(0, 2.5)
+        ax.plot([-1, 5], [1, 1], linestyle='dashed', color='lightgrey')
+        labels = ['Population', 'Cluster-specific', 'Disease-specific', 'Contextualized']
+        ax.set_xticklabels(labels, rotation=35, ha='right', fontsize=14)
+        ax.set_yticklabels([0.0, 0.5, 1.0, 1.5, 2.0, 2.5], fontsize=14)
+        plt.xlabel('Method', fontsize=18)
+        plt.ylabel('Relative MSE', fontsize=18)
+        plt.title(f'{set_label} Errors', fontsize=22)
+        plt.tight_layout()
+        plt.savefig(f'{self.savedir}/relative_mse_{set_label.lower()}.pdf', dpi=300)
+        plt.clf()
+
+        # Save relative error values
+        relative_df = plot_df.groupby(['Model']).agg({'Relative MSE': ['mean', 'std']}).reset_index()[
+            ['Model', 'Relative MSE']]
+        relative_df.columns = [' '.join(col).strip(' ') for col in relative_df.columns]
+        relative_df.to_csv(f'{self.savedir}/relative_mses_{set_label.lower()}.csv', index=False)
+
 
         # Plot errors by diseases
         datapoints = \
@@ -327,11 +372,12 @@ class CorrelationExperiment(NeighborhoodExperiment):
         super().__init__(model='correlation', fit_intercept=fit_intercept, verbose=verbose, **kwargs)
         self.baseline_class = lambda: CorrelationNetworkSKLearn(fit_intercept=fit_intercept, verbose=verbose)
         self.contextualized_class = lambda: ContextualizedCorrelationWrapper(fit_intercept=fit_intercept, verbose=verbose)
+        self.mse_by_feature_cols = ['Bootstrap', 'sample_id', 'Model', 'Set', 'Disease'] + self.network_cols.tolist()
 
     def get_mses(self, X_preds, X_true):
         X_true = np.tile(np.expand_dims(X_true, axis=-1), (1, 1, X_true.shape[-1]))
         assert X_preds.shape == X_true.shape
-        return np.mean((X_preds - X_true) ** 2, axis=(1, 2))
+        return (X_preds - X_true) ** 2
 
 
 class BayesianExperiment(NeighborhoodExperiment):
