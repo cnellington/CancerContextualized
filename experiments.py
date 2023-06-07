@@ -46,6 +46,7 @@ class NeighborhoodExperiment:
             val_split=0.2,
             fit_intercept=False,
             save_models=True,
+            save_networks=False,
             load_saved=False,
             verbose=False,
     ):
@@ -56,6 +57,7 @@ class NeighborhoodExperiment:
         self.val_split = val_split
         self.fit_intercept = fit_intercept
         self.save_models = save_models
+        self.save_networks = save_networks
         self.load_saved = load_saved
         self.savedir = f'{base_dir}{model}-fit_intercept={fit_intercept}-val_split={val_split}-n_bootstraps={n_bootstraps}'
         # self.savedir += '-'.join([f'{k}={v}' for k, v in data_state.items()])  # dirname too long
@@ -145,16 +147,16 @@ class NeighborhoodExperiment:
         pass
 
     def export_networks(self, all_models):
-        all_train_networks = []
-        all_test_networks = []
+        train_networks = np.zeros((len(self.C_train), len(self.col_names), len(self.col_names)))
+        test_networks = np.zeros((len(self.C_test), len(self.col_names), len(self.col_names)))
         for model in all_models:
-            train_networks, _ = model.predict_networks(self.C_train)
-            test_networks, _ = model.predict_networks(self.C_test)
-            all_train_networks.append(train_networks)
-            all_test_networks.append(test_networks)
-        train_networks = np.mean(all_train_networks, axis=0)
+            train_networks_boot, _ = model.predict_networks(self.C_train)
+            train_networks += train_networks_boot / len(all_models)
+            del train_networks_boot  # immediate cleanup to avoid OOM
+            test_networks_boot, _ = model.predict_networks(self.C_test)
+            test_networks += test_networks_boot / len(all_models)
+            del test_networks_boot  # immediate cleanup to avoid OOM
         train_networks = train_networks.reshape((train_networks.shape[0], train_networks.shape[1] * train_networks.shape[2]))
-        test_networks = np.mean(all_test_networks, axis=0)
         test_networks = test_networks.reshape((test_networks.shape[0], test_networks.shape[1] * test_networks.shape[2]))
         columns = np.array([[f'{col1}-{col2}' for col2 in self.col_names] for col1 in self.col_names]).reshape(
             (len(self.col_names) ** 2,))
@@ -204,7 +206,7 @@ class NeighborhoodExperiment:
         self.run_model('Population', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Cluster-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
         self.run_model('Disease-specific', self.n_bootstraps, self.val_split, load_saved=self.load_saved)
-        self.run_model('Contextualized', self.n_bootstraps, self.val_split, load_saved=self.load_saved) # save_networks=True)
+        self.run_model('Contextualized', self.n_bootstraps, self.val_split, load_saved=self.load_saved, save_networks=self.save_networks)
         self.mse_df = pd.DataFrame(data=self.mse_df_rows, columns=self.mse_df_cols)
         self.mse_df.to_csv(f'{self.savedir}/mse_df.csv', index=False)
         self.mse_by_feature_df = pd.DataFrame(data=self.mse_by_feature_rows, columns=self.mse_by_feature_cols)

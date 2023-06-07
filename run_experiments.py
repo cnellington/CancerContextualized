@@ -55,33 +55,17 @@ data_state.update({
     'no_test': False,
 })
 val_split = 0.2
-n_bootstraps = 1
+n_bootstraps = 30
 save_models = False
-# base_dir = f'results/230508_metagenes_20boots/'
-base_dir = 'results/timing/'
-
-t0 = time.time()
-print('Correlation Experiment')
-experiment = CorrelationExperiment(
-    base_dir=base_dir,
-    n_bootstraps=n_bootstraps,
-    val_split=val_split,
-    fit_intercept=True,
-    data_state=data_state,
-    save_models=save_models,
-)
-experiment.run()
-t1 = time.time()
-
-print('time', t1-t0)
-
+save_networks = True
+base_dir = f'results/230518_metagenes_20boots/'
 
 # Sanity check
-# sanity = NeighborhoodExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False)
-# sanity.run()
-# sanity = CorrelationExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False)
-# sanity.run()
-# print('sanity check completed successfully <:)')
+sanity = NeighborhoodExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+sanity.run()
+sanity = CorrelationExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+sanity.run()
+print('sanity check completed successfully <:)')
 
 # Run experiments
 for fit_intercept in [True, False]:
@@ -93,6 +77,7 @@ for fit_intercept in [True, False]:
         fit_intercept=fit_intercept,
         data_state=data_state,
         save_models=save_models,
+        save_networks=save_networks,
     )
     experiment.run()
 
@@ -104,6 +89,7 @@ for fit_intercept in [True, False]:
         fit_intercept=fit_intercept,
         data_state=data_state,
         save_models=save_models,
+        save_networks=save_networks,
     )
     experiment.run()
 
@@ -115,6 +101,7 @@ for fit_intercept in [True, False]:
         fit_intercept=fit_intercept,
         data_state=data_state,
         save_models=save_models,
+        save_networks=save_networks,
     )
     experiment.run()
 
