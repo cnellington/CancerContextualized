@@ -160,6 +160,7 @@ def load_data(
     # update dictionary with the list of column names in mut_cols and the value for these new keys are True
     numeric_covars.update({f"{gene}": True for gene in mut_cols})
 
+    col_count = 0
     numeric_headers = []
     for col, numeric in numeric_covars.items(): # iterate through each entry of the dictionary
         if numeric:

@@ -48,7 +48,7 @@ data_state = DEFAULT_DATA_STATE.copy()
 data_state.update({
     # 'dry_run': True,
     'num_features': 50,
-    'covar_projection': 200,
+    # 'covar_projection': 200,
     # 'gene_list': gene_list,
     'transform': 'pca',
     'feature_selection': None,
@@ -58,13 +58,13 @@ val_split = 0.2
 n_bootstraps = 30
 save_models = False
 save_networks = True
-base_dir = f'results/230518_metagenes_20boots/'
+base_dir = f'results/230606_metagenes_20boots/'
 
 # Sanity check
-sanity = NeighborhoodExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
-sanity.run()
-sanity = CorrelationExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
-sanity.run()
+# sanity = NeighborhoodExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+# sanity.run()
+# sanity = CorrelationExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+# sanity.run()
 print('sanity check completed successfully <:)')
 
 # Run experiments
