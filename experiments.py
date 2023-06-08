@@ -25,7 +25,7 @@ from baselines import (
     NeighborhoodSelectionSKLearn,
     CorrelationNetworkSKLearn,
 )
-from dataloader import load_data, load_toy_data, DEFAULT_DATA_STATE
+from dataloader import load_data, load_toy_data, DEFAULT_DATA_STATE, HALLMARK_GENES
 
 
 experiments = {
@@ -395,3 +395,63 @@ class BayesianExperiment(NeighborhoodExperiment):
         self.contextualized_class = lambda: ContextualizedBayesianNetworksWrapper(fit_intercept=False, project_to_dag=project_to_dag, verbose=verbose)
         self.project_to_dag = project_to_dag
         self.savedir += f'-project_to_dag={project_to_dag}'
+
+
+def main(
+        network_type='neighborhood', 
+        fit_intercept=True,
+        val_split = 0.2,
+        n_bootstraps = 30,
+        save_models = False,
+        save_networks = True,
+        base_dir = f'results/230606_metagenes_30boots_projected/',
+        no_test = True,
+    ):
+    import time
+    network_types = {
+        'neighborhood': NeighborhoodExperiment,
+        'markov': MarkovExperiment,
+        'correlation': CorrelationExperiment,
+        'bayesian': BayesianExperiment,
+    }
+    experiment_class = network_types[network_type]
+    
+    # Sanity check
+    sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, save_models=True, save_networks=True)
+    sanity.run()
+    sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, load_saved=True, save_networks=True)
+    sanity.run()
+    print('sanity check completed successfully <:)')
+
+    contextual_genes = np.loadtxt('data/contextual_genes_sorted.txt', dtype=str).tolist()
+    gene_lists = HALLMARK_GENES.copy()
+    gene_lists['Contextual Metagenes'] = contextual_genes
+
+    # Setup global data and experiment parameters
+    data_state = DEFAULT_DATA_STATE.copy()
+    data_state.update({
+        # 'dry_run': True,
+        'num_features': 50,
+        'covar_projection': 200,
+        # 'gene_list': gene_list,
+        'transform': 'pca',
+        'feature_selection': 'population',
+        'no_test': no_test,
+    })
+
+    experiment = experiment_class(
+        base_dir=base_dir,
+        n_bootstraps=n_bootstraps,
+        val_split=val_split,
+        fit_intercept=fit_intercept,
+        data_state=data_state,
+        save_models=save_models,
+        save_networks=save_networks,
+    )
+    print(f'Beginning {network_type} experiment')
+    experiment.run()
+
+
+if __name__ == '__main__':
+    torch.set_float32_matmul_precision('medium')
+    main()
