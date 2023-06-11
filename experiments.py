@@ -1,4 +1,6 @@
 import os
+import time
+import argparse
 import dill as pickle
 import numpy as np
 import pandas as pd
@@ -50,6 +52,7 @@ class NeighborhoodExperiment:
             load_saved=False,
             verbose=False,
     ):
+        self.savedir = os.path.join(base_dir, f'{model}-fit_intercept={fit_intercept}-val_split={val_split}-n_bootstraps={n_bootstraps}')
         self.baseline_class = lambda: NeighborhoodSelection(fit_intercept=fit_intercept, verbose=verbose)
         self.contextualized_class = lambda: ContextualizedNeighborhoodSelectionWrapper(fit_intercept=fit_intercept, verbose=verbose)
         self.data_state = data_state
@@ -59,7 +62,6 @@ class NeighborhoodExperiment:
         self.save_models = save_models
         self.save_networks = save_networks
         self.load_saved = load_saved
-        self.savedir = f'{base_dir}{model}-fit_intercept={fit_intercept}-val_split={val_split}-n_bootstraps={n_bootstraps}'
         # self.savedir += '-'.join([f'{k}={v}' for k, v in data_state.items()])  # dirname too long
         os.makedirs(self.savedir, exist_ok=True)
         with open(f'{self.savedir}/data_state.json', 'w') as f:
@@ -398,16 +400,21 @@ class BayesianExperiment(NeighborhoodExperiment):
 
 
 def main(
-        network_type='neighborhood', 
-        fit_intercept=True,
+        network_type = 'neighborhood', 
+        fit_intercept = True,
         val_split = 0.2,
         n_bootstraps = 30,
         save_models = False,
         save_networks = True,
-        base_dir = f'results/230606_metagenes_30boots_projected/',
+        result_dir = 'results/tempdir/',
+        dry_run = False,
+        num_features = 50,
+        covar_projection = -1,
+        transform = 'pca',
+        feature_selection = 'population',
         no_test = True,
+        project_to_dag = False,
     ):
-    import time
     network_types = {
         'neighborhood': NeighborhoodExperiment,
         'markov': MarkovExperiment,
@@ -417,11 +424,11 @@ def main(
     experiment_class = network_types[network_type]
     
     # Sanity check
-    sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, save_models=True, save_networks=True)
-    sanity.run()
-    sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, load_saved=True, save_networks=True)
-    sanity.run()
-    print('sanity check completed successfully <:)')
+    # sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, save_models=True, save_networks=True)
+    # sanity.run()
+    # sanity = experiment_class(n_bootstraps=2, data_state={'dry_run': True}, load_saved=True, save_networks=True)
+    # sanity.run()
+    # print('sanity check completed successfully <:)')
 
     contextual_genes = np.loadtxt('data/contextual_genes_sorted.txt', dtype=str).tolist()
     gene_lists = HALLMARK_GENES.copy()
@@ -430,28 +437,51 @@ def main(
     # Setup global data and experiment parameters
     data_state = DEFAULT_DATA_STATE.copy()
     data_state.update({
-        # 'dry_run': True,
-        'num_features': 50,
-        'covar_projection': 200,
+        'dry_run': dry_run,
+        'num_features': num_features,
+        'covar_projection': covar_projection,
         # 'gene_list': gene_list,
-        'transform': 'pca',
-        'feature_selection': 'population',
+        'transform': transform,
+        'feature_selection': feature_selection,
         'no_test': no_test,
     })
 
-    experiment = experiment_class(
-        base_dir=base_dir,
-        n_bootstraps=n_bootstraps,
-        val_split=val_split,
-        fit_intercept=fit_intercept,
-        data_state=data_state,
-        save_models=save_models,
-        save_networks=save_networks,
-    )
+    kwargs = {
+        'base_dir': os.path.join('results', result_dir),
+        'n_bootstraps': n_bootstraps,
+        'val_split': val_split,
+        'fit_intercept': fit_intercept,
+        'data_state': data_state,
+        'save_models': save_models,
+        'save_networks': save_networks,
+    }
+    if network_type == 'bayesian':
+        kwargs.update({
+            'project_to_dag': project_to_dag,
+            'fit_intercept': False,
+        })
+    experiment = experiment_class(**kwargs)
     print(f'Beginning {network_type} experiment')
     experiment.run()
+    print('finished successfully <:)')
 
 
 if __name__ == '__main__':
     torch.set_float32_matmul_precision('medium')
-    main()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--network_type', type=str, default='neighborhood')
+    parser.add_argument('--fit_intercept', default=False, action='store_true')
+    parser.add_argument('--val_split', type=float, default=0.2)
+    parser.add_argument('--n_bootstraps', type=int, default=30)
+    parser.add_argument('--save_models', default=False, action='store_true')
+    parser.add_argument('--save_networks', default=False, action='store_true')
+    parser.add_argument('--result_dir', type=str, default='exampledir')
+    parser.add_argument('--dry_run', default=False, action='store_true')
+    parser.add_argument('--num_features', type=int, default=50)
+    parser.add_argument('--covar_projection', type=int, default=200)
+    parser.add_argument('--transform', type=str, default='pca')
+    parser.add_argument('--feature_selection', type=str, default='population')
+    parser.add_argument('--no_test', default=True, action='store_false')
+    parser.add_argument('--project_to_dag', default=False, action='store_true')
+    args = parser.parse_args()
+    main(**vars(args))

@@ -160,9 +160,12 @@ def load_data(
     # update dictionary with the list of column names in mut_cols and the value for these new keys are True
     numeric_covars.update({f"{gene}": True for gene in mut_cols})
 
+    transform_i = None
     col_count = 0
     numeric_headers = []
     for col, numeric in numeric_covars.items(): # iterate through each entry of the dictionary
+        if col in mut_cols and transform_i is None:
+            transform_i = col_count
         if numeric:
             # Convert numeric values to floats, replace NaN with column mean
             num_col = pd.to_numeric(context_df[col], errors='coerce')
