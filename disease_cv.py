@@ -96,23 +96,27 @@ def plot_average_mse(plot_df):
         plot_df,
         x='Model',
         y='MSE',
-        hue_order=['Population', 'Cluster-specific', 'Contextualized'],
+        order = ['Population', 'Cluster-specific', 'Contextualized'],
         palette = ['lightblue', 'deepskyblue', 'orange'],
         errorbar='sd',
         capsize=0.05,
     #     edgecolor='black',
         ax=ax
     )
+
     plt.title("Test Errors by Model (Disease Specific CV)", fontsize=14)
     plt.tight_layout()
-    plt.savefig(f'./results/test_model.pdf', dpi=300)
+    plt.savefig(f'./results/test_model_aggregated.pdf', dpi=300)
     plt.show()
 
-    
+def write_average_mse_table(plot_df):
+    average_mse = plot_df.groupby(['Model'])['MSE'].mean()
+    average_mse = average_mse.reset_index()
+    average_mse['std'] = plot_df.groupby(['Model'])['MSE'].std().values
+    average_mse.to_csv('./results/test_model_aggregated.csv', index=False)
 
 #%%
 def load_disease_data(data_state, experiment_params):
-    # unfinished function  needs more work depending on how to integrate the actual running model part...
 
     data_dir = './data/' # hard coded for now
     covars = pd.read_csv(data_dir + 'clinical_covariates.csv', header=0)
@@ -151,7 +155,7 @@ def load_disease_data(data_state, experiment_params):
     test_df_concat.to_csv('./results/test_df_concat.csv', index = False) # save the concatenated file to directory
     plot_concat_mse(test_df_concat) # plot the concatenated file
     plot_average_mse(test_df_concat) # plot the average mse for each model
-    
+    write_average_mse_table(test_df_concat) # write the average mse for each model to csv file
 
 
 #%%
