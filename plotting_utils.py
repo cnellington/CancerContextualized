@@ -66,6 +66,8 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
         rgblist = color
     else:
         rgblist = color_to_rgblist(color, num_categories)
+    if len(rgblist) < 2:  # catch bad colors
+        rgblist = ['rgb(0,0,0)', 'rgb(0,0,0)']
     legend = go.Figure()
     for rgb, specval in zip(rgblist, pd.unique(spectrum_filtered)):
         legend.add_trace(

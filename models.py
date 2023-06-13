@@ -1,3 +1,4 @@
+import time
 import dill as pickle
 import numpy as np
 import torch
@@ -49,8 +50,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
             val_dataset = model.dataloader(C_val, X_val, batch_size=10)
             checkpoint_callback = ModelCheckpoint(
                 monitor="val_loss",
-                dirpath=f'checkpoints',  # hacky way to get unique dir
-                filename='{epoch}-{val_loss:.2f}'
+                filename='{epoch}-{val_loss:.5f}'
             )
             es_callback = EarlyStopping(
                 monitor="val_loss",
@@ -68,6 +68,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
             )
             self.trainer.fit(model, train_dataset, val_dataset)
 
+            # Wait just a sec to save a final checkpoint if we reached the epoch limit
             # Get best checkpoint by val_loss
             best_checkpoint = torch.load(checkpoint_callback.best_model_path)
             model.load_state_dict(best_checkpoint['state_dict'])
@@ -76,8 +77,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
             train_dataset = model.dataloader(C, X, batch_size=10)
             checkpoint_callback = ModelCheckpoint(
                 monitor="train_loss",
-                dirpath=f'checkpoints',  # hacky way to get unique dir
-                filename='{epoch}-{train_loss:.2f}'
+                filename='{epoch}-{train_loss:.5f}'
             )
             es_callback = EarlyStopping(
                 monitor="train_loss",

@@ -4,6 +4,7 @@ import pickle as pkl
 import numpy as np
 import pandas as pd
 import warnings
+import json
 import torch
 
 from sklearn.model_selection import train_test_split
@@ -23,7 +24,7 @@ def load_toy_data(
     X = np.random.normal(0, 1, (num_samples, num_features))
     labels = np.random.choice(num_labels, size=num_samples).astype(str)
     ids = np.arange(num_samples).astype(str)
-    col_names = [f'feature_{i}' for i in range(num_features)]
+    col_names = np.array([f'feature_{i}' for i in range(num_features)])
     C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
     C_mean, C_std = C_train.mean(axis=0), C_train.std(axis=0)
     X_mean, X_std = X_train.mean(axis=0), X_train.std(axis=0)
@@ -33,15 +34,16 @@ def load_toy_data(
     X_test = (X_test - X_mean) / X_std
     return C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test, col_names
 
-
+HALLMARK_GENES = json.loads(open('data/hallmark_genesets.json', 'r').read())
 DEFAULT_DATA_STATE = {
     'num_features': 50,                 # number of expression features to consider
     'tumor_only': False,                # remove healthy normal tissue samples if True
     'hallmarks_only': False,            # reduce COSMIC genes to only the intersection between COSMIC and Hallmarks
-    'single_hallmark': None,            # reduce genes to a single hallmark set
+    # 'single_hallmark': None,            # reduce genes to a single hallmark set
+    'gene_list': None,                  # only use genes in this list
     'pretransform_norm': False,         # normalize before the feature transformation
-    'transform': None,                  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark avg'
-    'feature_selection': 'population',  # select genetic features according to population variance (population) or weighted disease-specific variance (disease)
+    'transform': None,                  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark_avg'
+    'feature_selection': 'population',  # None to retain ordering, or select genetic features according to population variance (population) or weighted disease-specific variance (disease)
     'disease_labels': True,             # include disease labels and primary site information in covariates
     'features_to_covars': -1,           # -1 to ignore, or a positive number of genomic features to add to covariates
     'remove_covar_features': False,     # remove genomic features that have been added to covariates
@@ -55,7 +57,8 @@ def load_data(
         num_features=DEFAULT_DATA_STATE['num_features'],
         tumor_only=DEFAULT_DATA_STATE['tumor_only'],
         hallmarks_only=DEFAULT_DATA_STATE['hallmarks_only'],
-        single_hallmark=DEFAULT_DATA_STATE['single_hallmark'],
+        # single_hallmark=DEFAULT_DATA_STATE['single_hallmark'],
+        gene_list=DEFAULT_DATA_STATE['gene_list'],
         pretransform_norm=DEFAULT_DATA_STATE['pretransform_norm'],
         transform=DEFAULT_DATA_STATE['transform'],
         feature_selection=DEFAULT_DATA_STATE['feature_selection'],
@@ -74,7 +77,7 @@ def load_data(
         X = np.random.normal(0, 1, (num_samples, num_features))
         labels = np.random.choice(num_labels, size=num_samples).astype(str)
         ids = np.arange(num_samples).astype(str)
-        col_names = [f'feature_{i}' for i in range(num_features)]
+        col_names = np.array([f'feature_{i}' for i in range(num_features)])
         C_train, C_test, X_train, X_test, labels_train, labels_test, ids_train, ids_test = train_test_split(C, X, labels, ids, test_size=0.2)
         C_mean, C_std = C_train.mean(axis=0), C_train.std(axis=0)
         X_mean, X_std = X_train.mean(axis=0), X_train.std(axis=0)
@@ -101,17 +104,7 @@ def load_data(
     genomic = pd.read_csv(data_dir + "transcriptomic_features.csv", header=0)
     # only keep the rows that are in covar
     genomic = covars.merge(genomic, on='sample_id', how='inner')[genomic.columns]
-    
     tnames_full = np.load(data_dir + "transcript_names.npy")
-    hallmark_genes = pd.read_csv(data_dir + 'h.all.v7.5.1.symbols.gmt', header=None, sep='\t')
-    hallmark_dict = {}
-    # for each row iin hallmark_genes, organize in a seperate dictionary entry
-    for i, row in hallmark_genes.iterrows():
-        hallmark_label = row[0]
-        hallmark_set = set(row[2:])
-        if np.nan in hallmark_set:
-            hallmark_set.remove(np.nan)
-        hallmark_dict[hallmark_label] = hallmark_set
 
     # Remove uninteresting features
     def drop_cols(df):
@@ -167,8 +160,12 @@ def load_data(
     # update dictionary with the list of column names in mut_cols and the value for these new keys are True
     numeric_covars.update({f"{gene}": True for gene in mut_cols})
 
+    transform_i = None
+    col_count = 0
     numeric_headers = []
     for col, numeric in numeric_covars.items(): # iterate through each entry of the dictionary
+        if col in mut_cols and transform_i is None:
+            transform_i = col_count
         if numeric:
             # Convert numeric values to floats, replace NaN with column mean
             num_col = pd.to_numeric(context_df[col], errors='coerce')
@@ -189,9 +186,14 @@ def load_data(
 
     # Get dataset values
     C = context_df.values
-    X = genomic.drop(columns='sample_id').values
+    if gene_list is None:
+        X = genomic.drop(columns='sample_id').values
+    else:
+        gene_list_idx = np.isin(gene_list, tnames_full)
+        gene_list = np.array(gene_list)[gene_list_idx]
+        tnames_full = gene_list
+        X = genomic[tnames_full].values
     print(f"Context shape {C.shape}, Expression shape {X.shape}")
-
 
     # Remove uninteresting genes
     consistent_feats = np.mean(X > 0, axis=0) > 0.999
@@ -200,15 +202,18 @@ def load_data(
 
     # reduce to all hallmarks
     if hallmarks_only:
-        hallmark_idx = np.isin(tnames_full, hallmark_genes.values[:, 2:])
+        all_hallmark_genes = set()
+        for hallmark_set in HALLMARK_GENES.values():
+            all_hallmark_genes += set(hallmark_set)
+        hallmark_idx = np.isin(tnames_full, list(all_hallmark_genes))
         X = X[:, hallmark_idx]
         tnames_full = tnames_full[hallmark_idx]
 
-    # Take a single hallmark set of genes
-    if single_hallmark:
-        hallmark_idx = np.isin(tnames_full, list(hallmark_dict[single_hallmark]))
-        X = X[:, hallmark_idx]
-        tnames_full = tnames_full[hallmark_idx]
+    # # Take a single hallmark set of genes
+    # if single_hallmark:
+    #     hallmark_idx = np.isin(tnames_full, list(HALLMARK_GENES[single_hallmark]))
+    #     X = X[:, hallmark_idx]
+    #     tnames_full = tnames_full[hallmark_idx]
         
     # Get train-test split
     labels = covars['disease_type'].values
@@ -249,11 +254,11 @@ def load_data(
         X_train = pca.transform(X_train)
         X_test = pca.transform(X_test)
         tnames_full = np.array([f"PC{i}" for i in range(X_train.shape[1])])
-    if transform == 'hallmark':
+    if transform == 'hallmark_avg':
         hallmark_tnames = []
         hallmark_train = []
         hallmark_test = []
-        for i, (hallmark_name, geneset) in enumerate(hallmark_dict.items()):
+        for i, (hallmark_name, geneset) in enumerate(HALLMARK_GENES.items()):
             hallmark_idx = np.isin(tnames_full, list(geneset))
             if not hallmark_idx.any():
                 continue
@@ -274,9 +279,11 @@ def load_data(
 #             print(f"{disease} {np.sum(disease_idx)}")
             var_avg += disease_vars * (np.sum(disease_idx) / len(disease_idx))  # weight by tissue samples
         feature_ordering = np.argsort(-var_avg)
-    if feature_selection == 'population':
+    elif feature_selection == 'population':
         population_vars = X_train.var(axis=0)
         feature_ordering = np.argsort(-population_vars)
+    else:
+        feature_ordering = np.arange(len(tnames_full))
     # todo: logistic selection based on survival
 
     # trim to desired number of features

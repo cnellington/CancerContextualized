@@ -1,8 +1,12 @@
+import numpy as np
 import torch
+import time
+
 torch.set_float32_matmul_precision('medium')
 
 from experiments import NeighborhoodExperiment, CorrelationExperiment, MarkovExperiment, BayesianExperiment
-from dataloader import DEFAULT_DATA_STATE
+from dataloader import DEFAULT_DATA_STATE, HALLMARK_GENES
+contextual_genes = np.loadtxt('data/contextual_genes_sorted.txt', dtype=str).tolist()
 
 # import argparse
 # parser = argparse.ArgumentParser()
@@ -23,7 +27,7 @@ from dataloader import DEFAULT_DATA_STATE
 # 'num_features': 50,                 # number of expression features to consider
 # 'tumor_only': False,                # remove healthy normal tissue samples if True
 # 'hallmarks_only': False,            # reduce COSMIC genes to only the intersection between COSMIC and Hallmarks
-# 'single_hallmark': None,            # reduce genes to a single hallmark set
+# 'gene_list': None,                  # only use genes in this list
 # 'pretransform_norm': False,         # normalize before the feature transformation
 # 'transform': None,                  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark avg'
 # 'feature_selection': 'population',  # select genetic features according to population variance (population) or weighted disease-specific variance (disease)
@@ -34,137 +38,71 @@ from dataloader import DEFAULT_DATA_STATE
 # 'no_test': True,                    # Create a new "test" set from the training data to avoid hyperparam tuning on the real test set
 # 'dry_run': False,                   # Return a sma
 
-base_dir = 'results/230428_100genes/'
+
+contextual_genes = np.loadtxt('data/contextual_genes_sorted.txt', dtype=str).tolist()
+gene_lists = HALLMARK_GENES.copy()
+gene_lists['Contextual Metagenes'] = contextual_genes
+
+# Setup global data and experiment parameters
 data_state = DEFAULT_DATA_STATE.copy()
 data_state.update({
     # 'dry_run': True,
-    'num_features': 100,
-    'covar_projection': 200,
-    'transform': None,
-    # 'features_to_covars': 10,
+    'num_features': 50,
+    # 'covar_projection': 200,
+    # 'gene_list': gene_list,
+    'transform': 'pca',
+    'feature_selection': None,
+    'no_test': False,
 })
 val_split = 0.2
-n_bootstraps = 3
+n_bootstraps = 30
+save_models = False
+save_networks = True
+base_dir = f'results/230606_metagenes_20boots/'
 
-sanity = NeighborhoodExperiment(n_bootstraps=1, data_state={'dry_run': True})
-sanity.run()
+# Sanity check
+# sanity = NeighborhoodExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+# sanity.run()
+# sanity = CorrelationExperiment(n_bootstraps=2, data_state={'dry_run': True}, save_models=False, save_networks=True)
+# sanity.run()
 print('sanity check completed successfully <:)')
 
+# Run experiments
 for fit_intercept in [True, False]:
-    print('Correlation Experiment')
-    experiment = CorrelationExperiment(
-        base_dir=base_dir,
-        n_bootstraps=n_bootstraps,
-        val_split=val_split,
-        fit_intercept=fit_intercept,
-        data_state=data_state,
-        # load_saved=True,  # only true to re-run results
-    )
-    experiment.run()
-
-    print('Neighborhood Experiment')
+    print('Neighborhood Experiment', fit_intercept)
     experiment = NeighborhoodExperiment(
         base_dir=base_dir,
         n_bootstraps=n_bootstraps,
         val_split=val_split,
         fit_intercept=fit_intercept,
         data_state=data_state,
+        save_models=save_models,
+        save_networks=save_networks,
     )
     experiment.run()
 
-    print('Markov Experiment')
+    print('Correlation Experiment', fit_intercept)
+    experiment = CorrelationExperiment(
+        base_dir=base_dir,
+        n_bootstraps=n_bootstraps,
+        val_split=val_split,
+        fit_intercept=fit_intercept,
+        data_state=data_state,
+        save_models=save_models,
+        save_networks=save_networks,
+    )
+    experiment.run()
+
+    print('Markov Experiment', fit_intercept)
     experiment = MarkovExperiment(
         base_dir=base_dir,
         n_bootstraps=n_bootstraps,
         val_split=val_split,
         fit_intercept=fit_intercept,
         data_state=data_state,
+        save_models=save_models,
+        save_networks=save_networks,
     )
     experiment.run()
 
-    # print('Bayesian Experiment')
-    # experiment = BayesianExperiment(
-    #     base_dir=base_dir,
-    #     n_bootstraps=n_bootstraps,
-    #     val_split=val_split,
-    #     fit_intercept=fit_intercept,
-    #     project_to_dag=True,
-    #     data_state=data_state,
-    # )
-    # experiment.run()
-    # exit()
-
 print('Finished Successfully <:)')
-# Run everything
-# dry_run = False
-# n_bootstraps = 3
-
-# base_dir = 'results/230425_neighborhood'
-# include_disease_labels = [True, False]
-# val_splits = [0.0, 0.2]
-# fit_intercepts = [False, True]
-# for fit_intercept in fit_intercepts:
-#     for val_split in val_splits:
-#         for include_disease in include_disease_labels:
-#             experiment = NeighborhoodExperiment(
-#                 base_dir=base_dir,
-#                 dry_run=dry_run,
-#                 n_bootstraps=n_bootstraps,
-#                 val_split=val_split,
-#                 fit_intercept=fit_intercept,
-#                 include_disease_labels=include_disease,
-#             )
-#             experiment.run()
-#
-#
-# base_dir = 'results/230425_markov'
-# include_disease_labels = [True, False]
-# val_splits = [0.0, 0.2]
-# fit_intercepts = [False, True]
-# for fit_intercept in fit_intercepts:
-#     for val_split in val_splits:
-#         for include_disease in include_disease_labels:
-#             experiment = MarkovExperiment(
-#                 base_dir=base_dir,
-#                 dry_run=dry_run,
-#                 n_bootstraps=n_bootstraps,
-#                 val_split=val_split,
-#                 fit_intercept=fit_intercept,
-#                 include_disease_labels=include_disease,
-#             )
-#             experiment.run()
-
-
-# base_dir = 'results/230425_correlation'
-# include_disease_labels = [True]
-# val_splits = [0.2]
-# fit_intercepts = [False]
-# for fit_intercept in fit_intercepts:
-#     for val_split in val_splits:
-#         for include_disease in include_disease_labels:
-#             experiment = CorrelationExperiment(
-#                 base_dir=base_dir,
-#                 dry_run=dry_run,
-#                 n_bootstraps=n_bootstraps,
-#                 val_split=val_split,
-#                 fit_intercept=fit_intercept,
-#                 include_disease_labels=include_disease,
-#             )
-#             experiment.run()
-
-# base_dir = 'results/230425_bayesian'
-# include_disease_labels = [True, False]
-# val_splits = [0.0, 0.2]
-# project_to_dags = [False, True]
-# for project_to_dag in project_to_dags:  # no intercept, test projection
-#     for val_split in val_splits:
-#         for include_disease in include_disease_labels:
-#             experiment = BayesianExperiment(
-#                 base_dir=base_dir,
-#                 dry_run=dry_run,
-#                 n_bootstraps=n_bootstraps,
-#                 val_split=val_split,
-#                 project_to_dag=project_to_dag,
-#                 include_disease_labels=include_disease,
-#             )
-#             experiment.run()
