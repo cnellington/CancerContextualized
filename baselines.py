@@ -204,8 +204,7 @@ class NeighborhoodSelection:
                 val_dataset = model.dataloader(X_val)
                 checkpoint_callback = ModelCheckpoint(
                     monitor="val_loss",
-                    dirpath=f'checkpoints',  # hacky way to get unique dir
-                    filename='{epoch}-{val_loss:.2f}'
+                    filename='{epoch}-{val_loss:.5f}'
                 )
                 es_callback = EarlyStopping(
                     monitor="val_loss",
@@ -232,8 +231,7 @@ class NeighborhoodSelection:
                 train_dataset = model.dataloader(X_boot)
                 checkpoint_callback = ModelCheckpoint(
                     monitor="train_loss",
-                    dirpath=f'checkpoints',  # hacky way to get unique dir
-                    filename='{epoch}-{train_loss:.2f}'
+                    filename='{epoch}-{train_loss:.5f}'
                 )
                 es_callback = EarlyStopping(
                     monitor="train_loss",
