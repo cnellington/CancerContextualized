@@ -720,7 +720,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_models", default=False, action="store_true")
     parser.add_argument("--load_saved", default=False, action="store_true")
     parser.add_argument("--save_networks", default=False, action="store_true")
-    parser.add_argument("--result_dir", type=str, default="exampledir")
+    parser.add_argument("--result_dir", type=str, default="experiment")
     parser.add_argument("--dry_run", default=False, action="store_true")
     parser.add_argument("--num_features", type=int, default=50)
     parser.add_argument("--covar_projection", type=int, default=200)
