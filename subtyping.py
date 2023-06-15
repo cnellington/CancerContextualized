@@ -69,7 +69,7 @@ def load_data(data_dir, result_dir, dryrun=False):
 
     covars['TCGA Subtype'] = covars.merge(known_subtypes_df, on='sample_id', how='left')['Subtype_Selected']
 
-    known_subtypes_df.to_csv(data_dir + 'tcga_subtypes_selected.csv', index=False)
+    # known_subtypes_df.to_csv(data_dir + 'tcga_subtypes_selected.csv', index=False)
 
 
     # make columns numeric
@@ -96,6 +96,7 @@ def load_data(data_dir, result_dir, dryrun=False):
         metagene_expression = metagene_expression[metagene_expression['sample_id'].isin(dryrun_ids['sample_id'])]
         survival_df = survival_df[survival_df['submitter_id'].isin(dryrun_ids['submitter_id'])]
         known_subtypes_df = known_subtypes_df[known_subtypes_df['sample_id'].isin(dryrun_ids['sample_id'])]
+    print('finished dataloading')
     return networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df
 
 
@@ -203,14 +204,14 @@ def main(data_dir, result_dir, dryrun = True):
         spectrum_types=spectrum_types,
         colors=colors,
         show_legends=show_legends,
-        savepath=f'{savedir}/pancancer_dendrogram.pdf',
+        savepath=f"{savedir}/pancancer_network_dendrogram.pdf",
     )
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    default_result_dir = './results/230518_metagenes_20boots/neighborhood-fit_intercept=True-val_split=0.2-n_bootstraps=30'
+    default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
     parser.add_argument('--result_dir', type=str, default=default_result_dir)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()

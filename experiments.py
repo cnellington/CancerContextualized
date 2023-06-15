@@ -302,7 +302,7 @@ class NeighborhoodExperiment:
         plt.yticks([])
         plt.title("Transcriptomic Embedding", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/transcriptomic_embedding.png", dpi=300)
+        plt.savefig(f"{self.savedir}/transcriptomic_embedding.pdf", dpi=300)
         plt.clf()
 
         # %%
@@ -321,7 +321,7 @@ class NeighborhoodExperiment:
         plt.yticks([])
         plt.title("Network Embedding", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/network_embedding.png", dpi=300)
+        plt.savefig(f"{self.savedir}/network_embedding.pdf", dpi=300)
         plt.clf()
 
     def run(self):
@@ -443,7 +443,7 @@ class NeighborhoodExperiment:
         plt.ylabel("MSE", fontsize=18)
         plt.title(f"{set_label} Errors", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/mse_{set_label.lower()}.png", dpi=300)
+        plt.savefig(f"{self.savedir}/mse_{set_label.lower()}.pdf", dpi=300)
         plt.clf()
 
         # Plot relative errors to contextualized
@@ -470,7 +470,7 @@ class NeighborhoodExperiment:
         plt.ylabel("Relative MSE", fontsize=18)
         plt.title(f"{set_label} Errors", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/relative_mse_{set_label.lower()}.png", dpi=300)
+        plt.savefig(f"{self.savedir}/relative_mse_{set_label.lower()}.pdf", dpi=300)
         plt.clf()
 
         # Save relative error values
@@ -562,7 +562,7 @@ class NeighborhoodExperiment:
         plt.ylabel("MSE", fontsize=18)
         plt.title(f"{set_label} Errors by Disease Type", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/mse_by_disease_{set_label.lower()}.png", dpi=300)
+        plt.savefig(f"{self.savedir}/mse_by_disease_{set_label.lower()}.pdf", dpi=300)
         plt.clf()
 
 

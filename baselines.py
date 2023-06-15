@@ -170,6 +170,7 @@ class NOTEARS(NeighborhoodSelectionModule):
     def get_params(self, n, project_to_dag=False, **kwargs):
         W = self.W.detach() * self.diag_mask
         if project_to_dag:
+            print('WARNING: projecting to dag takes a very long time')
             W = torch.tensor(project_to_dag_torch(W.numpy(force=True))[0])
         W_batch = W.unsqueeze(0).expand(n, -1, -1)
         mu = self.mu.detach()
