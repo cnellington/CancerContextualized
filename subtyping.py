@@ -31,8 +31,8 @@ def load_data(data_dir, result_dir, dryrun=False):
     metagene_expression = pd.read_csv(data_dir + 'metagene_expression.csv')
     
     networks = pd.read_csv(f'{result_dir}/networks.csv').drop(columns='Set')
-    networks = covars[['sample_id']].merge(networks, on='sample_id', how='inner')[networks.columns]
-
+    networks = covars.merge(networks, on='sample_id', how='inner')[networks.columns]
+    
     # Load known subtypes
     known_subtypes_df = pd.read_csv(data_dir + 'tcga_subtypes.csv')
     known_ids = known_subtypes_df['pan.samplesID'].values
@@ -108,68 +108,15 @@ def get_rgblist(colors):
     return rgblist
 
 
-def pancancer_dendrogram(networks, spectrums, spectrum_labels, title):
+def pancancer_dendrogram(data, covars, title, savepath):
+    plot_df = covars.merge(data, on='sample_id', how='inner')
+
     disease_rgblist = get_rgblist(['tab20b', 'tab20c'])
     site_rgblist = get_rgblist(['tab20'])
 
-    disease_types = covars['disease_type'].values
-    primary_sites = covars['primary_site'].values
-    sample_types = covars['sample_type'].values
-    spectrums = [
-        disease_types,
-        primary_sites,
-        #         sample_types,
-        #     clinical_covars['primary_site'].values
-    ]
-    spectrum_labels = [
-        'Disease Type',
-        'Primary Site',
-        #         'Sample Type',
-    ]
-    spectrum_types = [
-        'categorical',
-        'categorical',
-        #         'categorical',
-    ]
-    colors = [
-        disease_rgblist[:len(np.unique(disease_types))],
-        site_rgblist[:len(np.unique(primary_sites))],
-        #         'Blues',
-    ]
-    show_legends = [
-        True,
-        True,
-        #         True,
-    ]
-    plot_dendrogram(
-        dend_data,
-        title=title,
-        method='ward',
-        spectrums=spectrums,
-        spectrum_labels=spectrum_labels,
-        spectrum_types=spectrum_types,
-        colors=colors,
-        show_legends=show_legends,
-        savepath=f'{savedir}/{title}.pdf',
-    )
-
-# dend_features = networks.drop(columns=['sample_id']).values
-# pancancer_dendrogram(dend_features, title='Pancancer Network Organization')
-
-# exp_features = metagene_expression.drop(columns='sample_id').values
-# pancancer_dendrogram(exp_features, title='Pancancer Metagene Expression Organization')
-
-def main(data_dir, result_dir, dryrun = True):
-    savedir = f'{result_dir}/subtyping'
-    os.makedirs(savedir, exist_ok=True)
-    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
-    
-    disease_rgblist = get_rgblist(['tab20b', 'tab20c'])
-    site_rgblist = get_rgblist(['tab20'])
-
-    disease_types = covars['disease_type'].values
-    primary_sites = covars['primary_site'].values
-    sample_types = covars['sample_type'].values
+    disease_types = plot_df['disease_type'].values
+    primary_sites = plot_df['primary_site'].values
+    sample_types = plot_df['sample_type'].values
     spectrums = [
         disease_types,
         primary_sites,
@@ -196,22 +143,48 @@ def main(data_dir, result_dir, dryrun = True):
         True,
     ]
     plot_dendrogram(
-        networks.drop(columns=['sample_id']).values,
-        title='Pancancer Network Organization',
+        plot_df[data.columns].drop(columns=['sample_id']).values,
+        title=title,
         method='ward',
         spectrums=spectrums,
         spectrum_labels=spectrum_labels,
         spectrum_types=spectrum_types,
         colors=colors,
         show_legends=show_legends,
-        savepath=f"{savedir}/pancancer_network_dendrogram.pdf",
+        savepath=savepath,
     )
+    savepath_split = savepath.split('.')
+    savepath_noext = '.'.join(savepath_split[:-1])
+    savepath_ext = savepath_split[-1]
+    legend_savepath = savepath_noext + '_legend.' + savepath_ext
+    plot_dendrogram(
+        plot_df[data.columns].drop(columns=['sample_id']).values,
+        title=title,
+        method='ward',
+        spectrums=spectrums,
+        spectrum_labels=spectrum_labels,
+        spectrum_types=spectrum_types,
+        colors=colors,
+        show_legends=show_legends,
+        savepath=legend_savepath,
+        dendro_height=1000,
+    )
+
+
+def main(data_dir, result_dir, dryrun = True):
+    savedir = f'{result_dir}/subtyping'
+    os.makedirs(savedir, exist_ok=True)
+    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
+
+    pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
+    pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
+    pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
+    default_result_dir = 'results/subtyping_test/correlation-fit_intercept=False-val_split=0.2-n_bootstraps=2-dry_run=False-test=False-disease_test=None'
     parser.add_argument('--result_dir', type=str, default=default_result_dir)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()

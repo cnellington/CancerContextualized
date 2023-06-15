@@ -641,7 +641,7 @@ def main(
     save_models=False,
     load_saved=False,
     save_networks=True,
-    result_dir="results/tempdir/",
+    result_dir="tempdir",
     dry_run=False,
     num_features=50,
     covar_projection=-1,

@@ -266,8 +266,10 @@ def load_data(
             range(len(X)), test_size=0.2, random_state=10
         )
     else:
-        test_idx = np.isin(labels, disease_test)
-        train_idx = ~test_idx
+        idx = np.arange(len(X))
+        bool_text_idx = np.isin(labels, disease_test)
+        test_idx = idx[bool_text_idx]
+        train_idx = idx[~bool_text_idx]
         assert (
             np.sum(test_idx) > 0
         ), f"No test samples found for disease {disease_test} test set. Valid diseases are {np.unique(labels)}"
@@ -422,6 +424,8 @@ if __name__ == "__main__":
     #     ]
     #     print(args)
     # load_data(disease_test=None)
+    dat = load_data(test=False)
+    dat = load_data(test=True)
     dat = load_data(disease_test="BRCA", test=True)
     print(np.unique(dat[4]))
     print(np.unique(dat[5]))
