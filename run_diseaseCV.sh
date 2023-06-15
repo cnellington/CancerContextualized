@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=cancontext
 # partition (queue) declaration
-#SBATCH -t 3-00:00
+#SBATCH -t 1-00:00
 #SBATCH --partition=dept_cpu
 #SBATCH --mail-user=xiaoh@pitt.edu
 #SBATCH --mail-type=BEGIN,END,FAIL
@@ -15,4 +15,5 @@
 
 module load cuda/11.7.1
 
-python disease_cv.py 
+#python disease_cv.py 
+python -u experiments.py --network_type=neighborhood --disease_test=LGG --n_bootstraps=2 --fit_intercept --result_dir=disease_holdouts

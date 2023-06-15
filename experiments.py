@@ -371,6 +371,8 @@ class NeighborhoodExperiment:
         total_mses.columns = [" ".join(col).strip(" ") for col in total_mses.columns]
         total_mses.to_csv(f"{self.savedir}/total_mses.csv", index=False)
 
+        return self.mse_df
+
     def plot_mses(self, set_label):
         def remake_errorbars(mean_df, std_df, std_label, groupby=["Model", "Disease"]):
             stds = (
@@ -706,8 +708,9 @@ def main(
         )
     experiment = experiment_class(**kwargs)
     print(f"Beginning {network_type} experiment")
-    experiment.run()
+    mse_df = experiment.run()
     print("finished successfully <:)")
+    return mse_df
 
 
 if __name__ == "__main__":
