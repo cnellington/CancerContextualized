@@ -462,8 +462,11 @@ class GroupedNetworks:
         X_preds = np.zeros_like(X)
         for label in np.unique(labels):
             label_idx = labels == label
-            X_pred = self.models[label].predict(C[label_idx], X[label_idx])
-            if len(X_preds.shape) != len(X_pred.shape):  # make the return value consistent after seeing preds
+            if label in self.models:
+                X_pred = self.models[label].predict(C[label_idx], X[label_idx])
+            else:
+                continue  # no training data for this label, probably only in the test set. Leave predictions as zeros
+            if len(X_preds.shape) != len(X_pred.shape):  # Fix shape for correlation networks
                 X_preds = np.zeros((len(X), X.shape[-1], X.shape[-1]))
             X_preds[label_idx] = X_pred
         return X_preds

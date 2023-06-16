@@ -372,28 +372,26 @@ class NeighborhoodExperiment:
         total_mses.to_csv(f"{self.savedir}/total_mses.csv", index=False)
 
     def plot_mses(self, set_label):
+        # This inner function is used to create dataframes with the upper and lower bounds of the error bars for the plots.
         def remake_errorbars(mean_df, std_df, std_label, groupby=["Model", "Disease"]):
-            stds = (
-                std_df[std_df["Set"] == std_label].groupby(groupby).std().reset_index()
-            )
+            # Calculate standard deviation for each group
+            stds = std_df[std_df["Set"] == std_label].groupby(groupby).std().reset_index()
+            # Calculate mean for each group
             means = mean_df.groupby(groupby).mean().reset_index()
+            # Create upper bound of the error bar by adding standard deviation to the mean
             means_upper = means.copy()
             means_upper["MSE"] += stds["MSE"]
+            # Create lower bound of the error bar by subtracting standard deviation from the mean
             means_lower = means.copy()
             means_lower["MSE"] -= stds["MSE"]
+            # Combine means and their upper and lower bounds into a single dataframe
             ret = pd.concat([means, means_upper, means_lower], axis=0)
             return ret
-            # plot_rows = []
-            # for (i, (mean_row)), (_, (std_row)) in zip(means.iterrows(), stds.iterrows()):
-            #
-            #     plot_rows.extend([
-            #         [model, disease, mean],
-            #         [model, disease, mean + std],
-            #         [model, disease, mean - std]
-            #     ])
-            # return pd.DataFrame(data=plot_rows, columns=['Model', 'Disease', 'MSE'])
-
-        # Plot aggregate errors
+        
+        # Get population errors for plotting. 
+        # For Train and Test, average all MSEs within each bootstrap, and use the standard deviation of the bootstraps as the error bar. 
+        # For Train (Bootstrapped) and Test (Bootstrapped) the set was created by averaging bootstraps into a single prediction.
+        # In this case, remake the error bars using the standard deviation of the Train or Test set bootstraps are the error bars.
         mses_by_disease = (
             self.mse_df.drop(columns="sample_id")
             .groupby(["Bootstrap", "Model", "Set"])
@@ -412,7 +410,7 @@ class NeighborhoodExperiment:
         else:
             plot_df = set_df
 
-        if self.disease_test is None:
+        if self.disease_test is None:  # Remove Disease-specific when we don't have it
             order = [
                 "Population",
                 "Cluster-specific",
@@ -446,7 +444,10 @@ class NeighborhoodExperiment:
         plt.savefig(f"{self.savedir}/mse_{set_label.lower()}.pdf", dpi=300)
         plt.clf()
 
-        # Plot relative errors to contextualized
+        # Plot the contextualized model errors relative to the other models errors at the population level.
+        # So if the Cluster-specific bar is at 0.56, then the Contextualized model average error is 0.56 * Cluster-specific error.
+        # All basleines need to be below 1 for the contextualized model to be better than the baselines.
+        # Contextualized will always have a relative error of 1, since contextualized is the reference
         plot_df["Relative MSE"] = (
             plot_df[plot_df["Model"] == "Contextualized"]["MSE"].mean() / plot_df["MSE"]
         )
@@ -473,7 +474,7 @@ class NeighborhoodExperiment:
         plt.savefig(f"{self.savedir}/relative_mse_{set_label.lower()}.pdf", dpi=300)
         plt.clf()
 
-        # Save relative error values
+        # Save the relative error values to quickly check the exact relative errors
         relative_df = (
             plot_df.groupby(["Model"])
             .agg({"Relative MSE": ["mean", "std"]})
@@ -484,7 +485,7 @@ class NeighborhoodExperiment:
             f"{self.savedir}/relative_mses_{set_label.lower()}.csv", index=False
         )
 
-        # Plot errors by diseases
+        # Same as the population plot above, but for each disease type
         mses_by_disease = (
             self.mse_df.drop(columns="sample_id")
             .groupby(["Bootstrap", "Model", "Set", "Disease"])
@@ -524,7 +525,7 @@ class NeighborhoodExperiment:
             color="lightgrey",
         )
 
-        # Make labels
+        # Show the number of training samples for each disease on the x-axis by remaking the labels with the disease training sample counts
         train_datapoints = (
             self.mse_df[
                 (self.mse_df["Set"] == "Train")
