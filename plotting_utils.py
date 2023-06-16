@@ -110,11 +110,11 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
 
 
 def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectrum_labels=[], spectrum_types=[],
-                    colors=[], show_legends=[], savepath=None):
+                    colors=[], show_legends=[], savepath=None, dendro_height=100):
     heatmap_height = 300  # pixels
     spectrum_height = 20  # pixels
     spectrums_height = len(spectrums) * spectrum_height
-    dendro_height = 100  # pixels
+    # dendro_height = 100  # pixels
     total_height = heatmap_height + spectrums_height + dendro_height
     heatmap_frac = heatmap_height / total_height
     spectrums_frac = spectrums_height / total_height
@@ -371,3 +371,6 @@ if __name__ == '__main__':
     plot_dendrogram(networks_dummy, title='hello dendrogram', method='ward', spectrums=spectrums,
                     spectrum_labels=spectrum_labels, spectrum_types=spectrum_types, colors=colors,
                     show_legends=show_legends)
+    plot_dendrogram(networks_dummy, title='hello dendrogram', method='ward', spectrums=spectrums,
+                    spectrum_labels=spectrum_labels, spectrum_types=spectrum_types, colors=colors,
+                    show_legends=show_legends, dendro_height=1000)  # easy way to make legends visible

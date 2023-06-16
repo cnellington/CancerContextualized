@@ -2,18 +2,29 @@ import argparse
 import os
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
-import kaplanmeier as km
+import matplotlib.pyplot as plt
 from matplotlib import cm
-
-
-from sklearn.model_selection import train_test_split
+from matplotlib import cm
+from matplotlib.colors import ListedColormap
+import plotly.express as px
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 from scipy.spatial.distance import pdist, squareform
-import umap
+from scipy.stats import ttest_ind
+from sklearn.metrics import silhouette_score
+from sklearn.feature_selection import r_regression
 from sklearn.cluster import KMeans, AgglomerativeClustering
+from lifelines.statistics import logrank_test, multivariate_logrank_test, pairwise_logrank_test
+from lifelines import KaplanMeierFitter
+from lifelines.utils import qth_survival_times
+import kaplanmeier as km
+import umap
 
-from plotting_utils import plot_dendrogram
+from plotting_utils import plot_dendrogram, cdist
+
+
+numeric_covars = None
+
 
 def load_data(data_dir, result_dir, dryrun=False):
     covariate_files = [
@@ -31,8 +42,8 @@ def load_data(data_dir, result_dir, dryrun=False):
     metagene_expression = pd.read_csv(data_dir + 'metagene_expression.csv')
     
     networks = pd.read_csv(f'{result_dir}/networks.csv').drop(columns='Set')
-    networks = covars[['sample_id']].merge(networks, on='sample_id', how='inner')[networks.columns]
-
+    networks = covars.merge(networks, on='sample_id', how='inner')[networks.columns]
+    
     # Load known subtypes
     known_subtypes_df = pd.read_csv(data_dir + 'tcga_subtypes.csv')
     known_ids = known_subtypes_df['pan.samplesID'].values
@@ -73,6 +84,7 @@ def load_data(data_dir, result_dir, dryrun=False):
 
 
     # make columns numeric
+    global numeric_covars
     numeric_covars = [
         'age_at_diagnosis',
         'percent_neutrophil_infiltration',
@@ -108,68 +120,15 @@ def get_rgblist(colors):
     return rgblist
 
 
-def pancancer_dendrogram(networks, spectrums, spectrum_labels, title):
+def pancancer_dendrogram(data, covars, title, savepath):
+    plot_df = covars.merge(data, on='sample_id', how='inner')
+
     disease_rgblist = get_rgblist(['tab20b', 'tab20c'])
     site_rgblist = get_rgblist(['tab20'])
 
-    disease_types = covars['disease_type'].values
-    primary_sites = covars['primary_site'].values
-    sample_types = covars['sample_type'].values
-    spectrums = [
-        disease_types,
-        primary_sites,
-        #         sample_types,
-        #     clinical_covars['primary_site'].values
-    ]
-    spectrum_labels = [
-        'Disease Type',
-        'Primary Site',
-        #         'Sample Type',
-    ]
-    spectrum_types = [
-        'categorical',
-        'categorical',
-        #         'categorical',
-    ]
-    colors = [
-        disease_rgblist[:len(np.unique(disease_types))],
-        site_rgblist[:len(np.unique(primary_sites))],
-        #         'Blues',
-    ]
-    show_legends = [
-        True,
-        True,
-        #         True,
-    ]
-    plot_dendrogram(
-        dend_data,
-        title=title,
-        method='ward',
-        spectrums=spectrums,
-        spectrum_labels=spectrum_labels,
-        spectrum_types=spectrum_types,
-        colors=colors,
-        show_legends=show_legends,
-        savepath=f'{savedir}/{title}.pdf',
-    )
-
-# dend_features = networks.drop(columns=['sample_id']).values
-# pancancer_dendrogram(dend_features, title='Pancancer Network Organization')
-
-# exp_features = metagene_expression.drop(columns='sample_id').values
-# pancancer_dendrogram(exp_features, title='Pancancer Metagene Expression Organization')
-
-def main(data_dir, result_dir, dryrun = True):
-    savedir = f'{result_dir}/subtyping'
-    os.makedirs(savedir, exist_ok=True)
-    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
-    
-    disease_rgblist = get_rgblist(['tab20b', 'tab20c'])
-    site_rgblist = get_rgblist(['tab20'])
-
-    disease_types = covars['disease_type'].values
-    primary_sites = covars['primary_site'].values
-    sample_types = covars['sample_type'].values
+    disease_types = plot_df['disease_type'].values
+    primary_sites = plot_df['primary_site'].values
+    sample_types = plot_df['sample_type'].values
     spectrums = [
         disease_types,
         primary_sites,
@@ -196,22 +155,368 @@ def main(data_dir, result_dir, dryrun = True):
         True,
     ]
     plot_dendrogram(
-        networks.drop(columns=['sample_id']).values,
-        title='Pancancer Network Organization',
+        plot_df[data.columns].drop(columns=['sample_id']).values,
+        title=title,
         method='ward',
         spectrums=spectrums,
         spectrum_labels=spectrum_labels,
         spectrum_types=spectrum_types,
         colors=colors,
         show_legends=show_legends,
-        savepath=f"{savedir}/pancancer_network_dendrogram.pdf",
+        savepath=savepath,
     )
+    savepath_split = savepath.split('.')
+    savepath_noext = '.'.join(savepath_split[:-1])
+    savepath_ext = savepath_split[-1]
+    legend_savepath = savepath_noext + '_legend.' + savepath_ext
+    plot_dendrogram(
+        plot_df[data.columns].drop(columns=['sample_id']).values,
+        title=title,
+        method='ward',
+        spectrums=spectrums,
+        spectrum_labels=spectrum_labels,
+        spectrum_types=spectrum_types,
+        colors=colors,
+        show_legends=show_legends,
+        savepath=legend_savepath,
+        dendro_height=1000,
+    )
+
+
+survival_pvals = {}
+def update_surv_pvals(split, experiment, diseases, pval):
+    if split not in survival_pvals:
+        survival_pvals[split] = {}
+    if experiment not in survival_pvals[split]:
+        survival_pvals[split][experiment] = {}
+    survival_pvals[split][experiment]['+'.join(diseases)] = pval
+
+    # for diseases in [
+    #     ['HNSC', 'LUSC', 'LUAD'],
+    #     ['LGG', 'GBM'],
+    #     ['READ', 'COAD', 'STAD', 'ESCA'],
+    #     ['UCEC', 'UCS', 'OV'],
+    #     ['KICH', 'KIRC', 'KIRP'],
+    #     ['THCA', 'PAAD'],
+    # ]:
+
+
+    # subtype_dfs = []
+    # for diseases in single_diseases + disease_groups:
+    # for diseases in [['UCEC', 'UCS', 'OV']]:
+    # for diseases in [['OV'], ['CHOL']]:
+    #     print(diseases)
+
+def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_col, savedir=None):
+    data_views = {
+    #     'demographic': [],
+        'biopsy': [
+            'percent_neutrophil_infiltration',
+            'percent_monocyte_infiltration',
+            'percent_normal_cells',
+            'percent_tumor_nuclei',
+            'percent_lymphocyte_infiltration',
+            'percent_stromal_cells',
+            'percent_tumor_cells',
+        ],
+        'arm-level scna': [col for col in covars.columns if 'Arm' in col and 'Copies' not in col],
+        'gene-level scna': [col for col in covars.columns if ('Gene' in col or 'Allele' in col) and ('Copies' not in col)],
+        'snv': [col for col in covars.columns if 'Mutated' in col],
+    }
+    if savedir is not None:
+        os.makedirs(savedir, exist_ok=True)
+
+    # Only process samples in subtyping_data
+    covars = covars.merge(subtyping_data[['sample_id']], on='sample_id', how='inner')[covars.columns]
+    
+    # multi-disease
+    disease_idx = covars['disease_type'].values == diseases[0]
+    for disease in diseases[1:]:
+        disease_idx = np.logical_or(disease_idx, covars['disease_type'].values == disease)
+    disease_idx = np.logical_and(disease_idx, covars['sample_type'] == 'Primary Tumor')  # Remove healthy
+    disease_covars = covars[disease_idx]
+    
+    # Remove redundant features
+    max_feature_overlap = 0.7
+    redundant_features = set()
+    for arm_col in data_views['arm-level scna']:
+        for gene_col in data_views['gene-level scna']:
+            x = disease_covars[arm_col].values[:, np.newaxis]
+            y = disease_covars[gene_col].values
+            corr = r_regression(x, y)
+            if corr > max_feature_overlap:
+                redundant_features.add(gene_col)
+
+    x = disease_covars['WGD'].values[:, np.newaxis]
+    for arm_col in data_views['arm-level scna']:
+        y = disease_covars[arm_col].values
+        corr = r_regression(x, y)
+        if corr > max_feature_overlap:
+            redundant_features.add(arm_col)
+#     print(redundant_features)
+    
+    # Get known subtype labels
+    known_subtype_labels = disease_covars.merge(known_subtypes_df, on='sample_id', how='left')['Subtype_Selected']
+    unique_subtypes = disease_covars['TCGA Subtype'][~pd.isnull(disease_covars['TCGA Subtype'])].unique()
+    num_known_subtypes = len(unique_subtypes)
+    print('known subtypes', unique_subtypes, num_known_subtypes)
+    
+    # cluster networks and associte features with dendrogram splits
+    method = 'ward'
+    criterion = 'maxclust'
+    network_samples = subtyping_data.drop(columns='sample_id')[disease_idx].values
+    
+    dist_array = cdist(network_samples)
+    Z = linkage(dist_array, method=method)
+    k = num_known_subtypes  # get as many network subtypes as known subtypes
+    score = -1
+    if num_known_subtypes < 2:
+        for n_clusters in range(2, 10):
+            subtypes = fcluster(Z, n_clusters, criterion=criterion)
+            new_score = silhouette_score(squareform(dist_array), metric='precomputed', labels=subtypes)
+            if new_score > score:
+                score = new_score
+                k = n_clusters
+    subtypes = fcluster(Z, k, criterion=criterion)
+    score = silhouette_score(squareform(dist_array), metric='precomputed', labels=subtypes)
+    disease_covars['Network Subtype'] = subtypes
+    print('silhouette score', score)
+    
+    column_pvals = {col: 1 for col in numeric_covars}
+    for subtype in np.unique(subtypes):
+        subtype_idx = subtypes == subtype
+        for col in numeric_covars:
+            if col in redundant_features:
+                continue
+            col_samples = disease_covars[col].values
+            nan_idx = pd.isnull(col_samples)
+            col_samples = col_samples[~nan_idx]
+            col_subtype_idx = subtype_idx[~nan_idx]
+            null_set = col_samples[~col_subtype_idx]
+            test_set = col_samples[col_subtype_idx]
+            _, pval = ttest_ind(test_set, null_set)
+            if np.isnan(pval):
+                pval = 1
+            if pval < column_pvals[col]:
+                column_pvals[col] = pval
+    
+    max_view_features = 10
+    max_feature_pval = 1e-4
+    col_labels = []
+    col_samples = []
+    col_colors = []
+    for (data_view, view_cols), color in zip(data_views.items(), ['Purples', 'Blues', 'Greens', 'Reds', 'Oranges']):
+        view_pvals = np.array([column_pvals[col] for col in view_cols])
+        view_idx = np.argsort(view_pvals)[:max_view_features]
+        view_idx = view_idx[view_pvals[view_idx] < max_feature_pval]
+        view_names = np.array(view_cols)[view_idx].tolist()
+        view_pvals = view_pvals[view_idx].tolist()
+        view_labels = [f"{col} (-log(p) = {round(-np.log10(pval), 1)})" for col, pval in zip(view_names, view_pvals)]
+        col_labels += view_labels
+        col_samples += [disease_covars[col].values for col in view_names]
+        col_colors += [color] * len(view_labels)
+    col_types = ['continuous'] * len(col_labels)
+    col_legends = [False] * len(col_labels)
+#     print(list(zip(col_names, col_pvals, col_colors)))
+    
+    # add mandatory features to plot and concatenate
+    always_names = ['Network Subtype', 'TCGA Subtype', 'disease_type', 'stage', 'WGD', 'race', 'gender', 'age_at_diagnosis']
+    always_labels = ['Network Subtype', 'TCGA Subtype', 'Disease Type', 'Stage', 'WGD', 'Race', 'Gender', 'Age at Diagnosis']
+    always_colors = ['tab20b', 'tab20', 'Pastel1', 'Reds', 'Blues', 'rainbow', 'cool', 'Greys']
+    always_samples = [disease_covars[col].values for col in always_names]
+    always_types = ['categorical'] * (len(always_names) - 1) + ['continuous']
+    always_legends = [True] * len(always_names)
+    
+    all_labels = always_labels + col_labels
+    all_samples = always_samples + col_samples
+    all_colors = always_colors + col_colors
+    all_types = always_types + col_types
+    all_legends = always_legends + col_legends
+    
+    # Remove boring features
+    oncoplot_labels, oncoplot_samples, oncoplot_colors, oncoplot_types, oncoplot_legends = [], [], [], [], []
+    for i in range(len(all_samples)):
+        if len(pd.unique(all_samples[i])) > 1:
+            oncoplot_labels.append(all_labels[i])
+            oncoplot_samples.append(all_samples[i])
+            oncoplot_colors.append(all_colors[i])
+            oncoplot_types.append(all_types[i])
+            oncoplot_legends.append(all_legends[i])
+
+    # Get disease survival data
+    disease_covars[subtype_col] = subtypes.astype(str)
+    print(np.unique(subtypes))
+    disease_subtypes = disease_covars[['sample_id', 'disease_type', subtype_col]]
+
+    if savedir is not None:
+        oncoplot = plot_dendrogram(
+            network_samples,
+            title=f'{"+".join(diseases)} Oncoplot',
+            method=method,
+            spectrums=oncoplot_samples,
+            spectrum_labels=oncoplot_labels,
+            spectrum_types=oncoplot_types,
+            colors=oncoplot_colors,
+            show_legends=oncoplot_legends,
+            savepath=f'{savedir}/{diseases}-{subtype_col}-oncoplot.pdf' if savedir is not None else None,
+        ) 
+    return disease_subtypes
+
+
+def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, subtype_col, show=True, savedir=None):
+    # Create a table with known subtypes
+    subtypes_disease_idx = known_subtypes_df['disease_type'] == diseases[0]
+    for disease in diseases:
+        subtypes_disease_idx = np.logical_or(subtypes_disease_idx, known_subtypes_df['disease_type'] == disease)
+    disease_known_subtypes = known_subtypes_df[subtypes_disease_idx]
+    print(disease_known_subtypes['disease_type'].unique())
+
+    disease_subtypes_inner = disease_subtypes.merge(disease_known_subtypes, on='sample_id', how='inner')
+    disease_subtypes_inner['submitter_id'] = [sample_id[:12] for sample_id in disease_subtypes_inner['sample_id']]
+    disease_survival_inner = disease_subtypes_inner.merge(survival_df, on='submitter_id', how='inner')
+    disease_survival_inner.fillna('NA', inplace=True)
+
+    disease_subtypes_outer = disease_subtypes.merge(disease_known_subtypes, on='sample_id', how='outer')
+    disease_subtypes_outer['submitter_id'] = [sample_id[:12] for sample_id in disease_subtypes_outer['sample_id']]
+    disease_survival_outer = disease_subtypes_outer.merge(survival_df, on='submitter_id', how='inner')
+    disease_survival_outer.fillna('NA', inplace=True)
+
+    # known_cmap = {subtype: color for subtype, color in zip(disease_survival['Subtype_Selected'].unique(), px.colors.qualitative.Plotly)}
+    # network_cmap = {subtype: color for subtype, color in zip(disease_survival['network_subtype'].unique(), px.colors.qualitative.T10)}
+
+    # Plot survival splits
+    def plot_km(label_col, disease_survival_df, cmap, specifier=''):
+    #     idx = ~disease_survival[label_col].isnull()
+    #     if np.sum(idx) < 2:
+    #         return False
+    #     idx_df = disease_survival[idx]
+        disease_survival_df = disease_survival_df[disease_survival_df[label_col] != 'NA']
+        if len(disease_survival_df) == 0:
+            return np.nan, np.nan
+        
+        multivariate_result = multivariate_logrank_test(disease_survival_df['time'].astype(float), disease_survival_df[label_col], disease_survival_df['died'])
+        multivariate_pval = multivariate_result.p_value
+        
+        results = km.fit(disease_survival_df['time'], disease_survival_df['died'], disease_survival_df[label_col])#  != idx_df[label_col].values[0])
+        colors = cmap.colors[:len(disease_survival_df[label_col].unique())]
+        km.plot(results, title=f'{diseases} {label_col} Survival Function\n{specifier}\np-value {multivariate_result.p_value}', cmap=colors)
+    #     plt.tight_layout()
+        if savedir is not None:
+            plt.savefig(f'{savedir}/{diseases}-survival-{label_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
+        if show:
+            plt.show()
+        plt.clf()
+
+        # Select only the subtypes with the strongest split
+        pairwise_result = pairwise_logrank_test(disease_survival_df['time'].astype(float), disease_survival_df[label_col], disease_survival_df['died'])
+        pairwise_tests = pairwise_result.summary.reset_index()
+        best_row = pairwise_tests.iloc[pairwise_tests['p'].values.argmin()]
+        best_subtype, worst_subtype, pairwise_min_pval = best_row[['level_0', 'level_1', 'p']]
+        selected_df = disease_survival_df[disease_survival_df[label_col].isin([best_subtype, worst_subtype])]
+
+        # Perform logrank test
+    #     test = logrank_test(selected_df['time'].astype(float), selected_df['died'])
+        test = multivariate_logrank_test(selected_df['time'].astype(float), selected_df[label_col], selected_df['died'])
+
+        # Plot the survival function
+        # for subtype in subtypes:
+        #     subtype_df = disease_survival_df[disease_survival_df[label_col] == subtype]
+        results = km.fit(selected_df['time'], selected_df['died'], selected_df[label_col])#  != idx_df[label_col].values[0])
+        colors = cmap.colors[:len(selected_df[label_col].unique())]
+        km.plot(results, title=f'{diseases} {label_col} Survival Function\n{specifier}\np-value {test.p_value}', cmap=colors)
+        if savedir is not None:
+            plt.savefig(f'{savedir}/{diseases}-bestworstsurvival-{label_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
+        if show:
+            plt.show()
+        plt.clf()
+        return multivariate_pval, pairwise_min_pval
+        
+
+    # Plot network and known subtype crosstabulation
+    def plot_crosstab(group_col, count_col, disease_subtypes_df, cmap, specifier=''):
+        plot_df = pd.get_dummies(disease_subtypes_df[count_col])
+        plot_df[group_col] = disease_subtypes_df[group_col]
+        plot_df = plot_df.groupby(group_col).sum().reset_index()
+        plot_df.index = plot_df[group_col]
+        new_cmap = ListedColormap(cmap.colors[:len(plot_df.columns) - 1])
+        plot_df.drop(columns=group_col).plot(kind='bar', stacked=True, cmap=new_cmap)
+        plt.title(f'{diseases} {count_col} by {group_col} Crosstabulation\n{specifier}')
+    #     plt.tight_layout()
+        if savedir is not None:
+            plt.savefig(f'{savedir}/{diseases}-crosstab-{group_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
+        if show:
+            plt.show()
+        plt.clf()
+
+    if len(disease_survival_inner) > 0:
+        specifier = 'plotting shared samples only'
+        known_mv_pval, known_pair_pval = plot_km('Subtype_Selected', disease_survival_inner, cm.get_cmap('tab20'), specifier=specifier)
+        subtype_mv_pval, subtype_pair_pval = plot_km(subtype_col, disease_survival_inner, cm.get_cmap('tab20b'), specifier=specifier)
+        plot_crosstab('Subtype_Selected', subtype_col, disease_survival_inner, cm.get_cmap('tab20b'), specifier=specifier)
+        plot_crosstab(subtype_col, 'Subtype_Selected', disease_survival_inner, cm.get_cmap('tab20'), specifier=specifier)
+    else:
+        known_mv_pval, known_pair_pval = np.nan, np.nan
+        subtype_mv_pval, subtype_pair_pval = np.nan, np.nan
+        print('no inner plots')
+
+    if len(disease_survival_outer) > 0:
+        known_mv_pval_outer, known_pair_pval_outer = plot_km('Subtype_Selected', disease_survival_outer, cm.get_cmap('tab20'), specifier='plotting all samples with known subtypes')
+        subtype_mv_pval_outer, subtype_pair_pval_outer = plot_km(subtype_col, disease_survival_outer, cm.get_cmap('tab20b'), specifier='plotting all samples with network subtypes')
+        specifier = 'plotting all samples, NA = not shared between datasets'
+        plot_crosstab('Subtype_Selected', subtype_col, disease_survival_outer, cm.get_cmap('tab20b'), specifier=specifier)
+        plot_crosstab(subtype_col, 'Subtype_Selected', disease_survival_outer, cm.get_cmap('tab20'), specifier=specifier)
+    else:
+        known_mv_pval_outer, known_pair_pval_outer = np.nan, np.nan
+        subtype_mv_pval_outer, subtype_pair_pval_outer = np.nan, np.nan
+        print('no outer plots')
+        
+    return [
+        known_mv_pval, 
+        known_pair_pval, 
+        subtype_mv_pval, 
+        subtype_pair_pval, 
+        known_mv_pval_outer, 
+        known_pair_pval_outer, 
+        subtype_mv_pval_outer, 
+        subtype_pair_pval_outer, 
+    ]
+
+
+def main(data_dir, result_dir, dryrun = True):
+    savedir = f'{result_dir}/subtyping'
+    os.makedirs(savedir, exist_ok=True)
+    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
+
+    # pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
+    # pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
+    # pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
+    
+    disease_groups = [
+        ['HNSC', 'LUSC', 'LUAD'],
+        ['LGG', 'GBM'],
+        ['READ', 'COAD', 'STAD', 'ESCA'],
+        ['UCEC', 'UCS', 'OV'],
+        ['KICH', 'KIRC', 'KIRP'],
+        ['THCA', 'PAAD'],
+    ]
+    single_diseases = [[disease] for disease in np.unique(covars['disease_type'].values)]
+
+    pvals_rows = []
+    for diseases in single_diseases[:2]:
+        print(diseases)
+        subtype_col = 'network_subtypes'
+        disease_subtypes = do_subtyping(diseases, networks, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        pvals_row = do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        subtype_col = 'expression_subtypes'
+        disease_subtypes = do_subtyping(diseases, metagene_expression, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        expr_pvals_row = do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append(['+'.join(diseases)] + pvals_row + expr_pvals_row)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
+    default_result_dir = 'results/subtyping_test/correlation-fit_intercept=False-val_split=0.2-n_bootstraps=2-dry_run=False-test=False-disease_test=None'
     parser.add_argument('--result_dir', type=str, default=default_result_dir)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()
