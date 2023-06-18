@@ -101,9 +101,52 @@ def plot_disease_cv(final_plot_df, result_dir):
     plt.title('Test Errors by Disease Type (Disease Specific CV)', fontsize=14)
     plt.tight_layout()
 
-    plt.savefig(f'{result_dir}/test_diseaseCV.pdf', dpi=300)
+    #plt.savefig(f'{result_dir}/test_diseaseCV.pdf', dpi=300)
     plt.show()
     plt.clf()
+
+def plot_aggregated_disease_cv(final_plot_df, result_dir):
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.barplot(
+        final_plot_df,
+        x='Model',
+        y='MSE',
+        order = ['Population', 'Cluster-specific', 'Contextualized'],
+        palette = ['lightblue', 'deepskyblue', 'orange'],
+        #errorbar='sd',
+        ci = None,
+        capsize=0.05,
+    #     edgecolor='black',
+        ax=ax
+    )
+
+    plt.title("Test Errors by Model (Disease Specific CV)", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f'{result_dir}/noCI_deseaseCV_aggregated.pdf', dpi=300)
+    plt.show()
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+    sns.barplot(
+        final_plot_df,
+        x='Model',
+        y='MSE',
+        order = ['Population', 'Cluster-specific', 'Contextualized'],
+        palette = ['lightblue', 'deepskyblue', 'orange'],
+        errorbar='sd',
+        capsize=0.05,
+    #     edgecolor='black',
+        ax=ax
+    )
+
+    plt.title("Test Errors by Model (Disease Specific CV)", fontsize=14)
+    plt.tight_layout()
+    plt.savefig(f'{result_dir}/deseaseCV_aggregated.pdf', dpi=300)
+    plt.show()
+
+# def write_aggregated_diseaseCV(final_plot_df, result_dir):
+#     final_plot_df = final_plot_df.groupby(['Model']).mean().reset_index()
+#     final_plot_df.to_csv(f'{result_dir}/diseaseCV_aggregated.csv', index=False)
 
 #%%
 def main(args):
@@ -152,11 +195,12 @@ def main(args):
         disease_cv_dfs.append(disease_cv_df.drop(columns=['index']))
 
 
-        final_plot_df = pd.concat(plot_dfs)
-        final_disease_cv_df = pd.concat(disease_cv_dfs)
-        final_disease_cv_df.to_csv(f"{result_dir}/disease_cv_df.csv", index=False)
+    final_plot_df = pd.concat(plot_dfs)
+    final_disease_cv_df = pd.concat(disease_cv_dfs)
+    #final_disease_cv_df.to_csv(f"{result_dir}/disease_cv_df.csv", index=False)
 
-        plot_disease_cv(final_plot_df, result_dir)
+    plot_disease_cv(final_plot_df, result_dir)
+    plot_aggregated_disease_cv(final_plot_df, result_dir)
 
 
 if __name__ == "__main__":
@@ -191,4 +235,3 @@ if __name__ == "__main__":
 
 
 #%%
-
