@@ -1,3 +1,4 @@
+# Whole lotta tech debt
 import argparse
 import os
 import numpy as np
@@ -228,6 +229,8 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
 
     # Only process samples in subtyping_data
     covars = covars.merge(subtyping_data[['sample_id']], on='sample_id', how='inner')[covars.columns]
+    covars.reset_index(drop=True, inplace=True)
+    subtyping_data.reset_index(drop=True, inplace=True)
     
     # multi-disease
     disease_idx = covars['disease_type'].values == diseases[0]
@@ -305,6 +308,8 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
     col_labels = []
     col_samples = []
     col_colors = []
+    col_types = []
+    col_legends = []
     for (data_view, view_cols), color in zip(data_views.items(), ['Purples', 'Blues', 'Greens', 'Reds', 'Oranges']):
         view_pvals = np.array([column_pvals[col] for col in view_cols])
         view_idx = np.argsort(view_pvals)[:max_view_features]
@@ -315,16 +320,29 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
         col_labels += view_labels
         col_samples += [disease_covars[col].values for col in view_names]
         col_colors += [color] * len(view_labels)
-    col_types = ['continuous'] * len(col_labels)
-    col_legends = [False] * len(col_labels)
+        if data_view == 'biopsy':
+            col_types += ['continuous'] * len(view_labels)
+            col_legends += [True] * len(view_labels)
+        else:
+            col_types += ['categorical'] * len(view_labels)
+            col_legends += [False] * len(view_labels)
+    # col_types = ['continuous'] * len(col_labels)
+    # col_legends = [False] * len(col_labels)
 #     print(list(zip(col_names, col_pvals, col_colors)))
     
     # add mandatory features to plot and concatenate
-    always_names = ['Network Subtype', 'TCGA Subtype', 'disease_type', 'stage', 'WGD', 'race', 'gender', 'age_at_diagnosis']
-    always_labels = ['Network Subtype', 'TCGA Subtype', 'Disease Type', 'Stage', 'WGD', 'Race', 'Gender', 'Age at Diagnosis']
-    always_colors = ['tab20b', 'tab20', 'Pastel1', 'Reds', 'Blues', 'rainbow', 'cool', 'Greys']
+    always_names = ['Network Subtype', 'TCGA Subtype', 'disease_type', 'race', 'gender', 'age_at_diagnosis', 'stage']
+    always_pvals = []
+    for name in always_names:
+        if name in column_pvals:
+            always_pvals.append(column_pvals[col])
+        else:
+            always_pvals.append(1)
+    always_titles = ['Network Subtype', 'TCGA Subtype', 'Disease Type', 'Race', 'Gender', 'Age at Diagnosis', 'Stage']
+    always_labels = [f"{title} (-log(p) = {round(-np.log10(pval), 1)})" if pval < 1 else title for title, pval in zip(always_titles, always_pvals)]
+    always_colors = ['tab20b', 'tab20', 'Pastel1', 'rainbow', 'cool', 'Greys', 'Reds']
     always_samples = [disease_covars[col].values for col in always_names]
-    always_types = ['categorical'] * (len(always_names) - 1) + ['continuous']
+    always_types = ['categorical', 'categorical', 'categorical', 'categorical', 'categorical', 'continuous', 'categorical']
     always_legends = [True] * len(always_names)
     
     all_labels = always_labels + col_labels
@@ -400,6 +418,7 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
         results = km.fit(disease_survival_df['time'], disease_survival_df['died'], disease_survival_df[label_col])#  != idx_df[label_col].values[0])
         colors = cmap.colors[:len(disease_survival_df[label_col].unique())]
         km.plot(results, title=f'{diseases} {label_col} Survival Function\n{specifier}\np-value {multivariate_result.p_value}', cmap=colors)
+        plt.ylim(-0.05, 1.05)
     #     plt.tight_layout()
         if savedir is not None:
             plt.savefig(f'{savedir}/{diseases}-survival-{label_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
@@ -424,6 +443,7 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
         results = km.fit(selected_df['time'], selected_df['died'], selected_df[label_col])#  != idx_df[label_col].values[0])
         colors = cmap.colors[:len(selected_df[label_col].unique())]
         km.plot(results, title=f'{diseases} {label_col} Survival Function\n{specifier}\np-value {test.p_value}', cmap=colors)
+        plt.ylim(-0.05, 1.05)
         if savedir is not None:
             plt.savefig(f'{savedir}/{diseases}-bestworstsurvival-{label_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
         if show:
@@ -471,14 +491,14 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
         print('no outer plots')
         
     return [
-        known_mv_pval, 
-        known_pair_pval, 
         subtype_mv_pval, 
         subtype_pair_pval, 
-        known_mv_pval_outer, 
-        known_pair_pval_outer, 
         subtype_mv_pval_outer, 
         subtype_pair_pval_outer, 
+        known_mv_pval, 
+        known_pair_pval, 
+        known_mv_pval_outer, 
+        known_pair_pval_outer, 
     ]
 
 
@@ -490,33 +510,40 @@ def main(data_dir, result_dir, dryrun = True):
     # pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
     # pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
     # pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
-    
-    disease_groups = [
-        ['HNSC', 'LUSC', 'LUAD'],
-        ['LGG', 'GBM'],
-        ['READ', 'COAD', 'STAD', 'ESCA'],
-        ['UCEC', 'UCS', 'OV'],
-        ['KICH', 'KIRC', 'KIRP'],
-        ['THCA', 'PAAD'],
-    ]
-    single_diseases = [[disease] for disease in np.unique(covars['disease_type'].values)]
 
+    pvals_columns = ['disease', 'method', 'mv_shared', 'pair_shared', 'mv_outer', 'pair_outer']
     pvals_rows = []
-    for diseases in single_diseases[:2]:
-        print(diseases)
+    all_subtype_dfs = []
+    for disease in np.unique(covars['disease_type'].values):
         subtype_col = 'network_subtypes'
-        disease_subtypes = do_subtyping(diseases, networks, covars, known_subtypes_df, subtype_col, savedir=savedir)
-        pvals_row = do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append([disease, 'CoCA Subtypes'] + pvals_row[4:])
+        pvals_rows.append([disease, 'Network Subtypes'] + pvals_row[:4])
         subtype_col = 'expression_subtypes'
-        disease_subtypes = do_subtyping(diseases, metagene_expression, covars, known_subtypes_df, subtype_col, savedir=savedir)
-        expr_pvals_row = do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
-        pvals_rows.append(['+'.join(diseases)] + pvals_row + expr_pvals_row)
+        disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append([disease, 'Expression Subtypes'] + pvals_row[:4])
+        disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df.drop(columns='disease_type'), on='sample_id', how='outer')
+        disease_all_subtypes['disease_type'] = disease
+        all_subtype_dfs.append(disease_all_subtypes)
+    pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
+    pd.concat(all_subtype_dfs, ignore_index=True).to_csv(f'{savedir}/all_subtypes.csv', index=False)
+    
+    # disease_groups = [
+    #     ['HNSC', 'LUSC', 'LUAD'],
+    #     ['LGG', 'GBM'],
+    #     ['READ', 'COAD', 'STAD', 'ESCA'],
+    #     ['UCEC', 'UCS', 'OV'],
+    #     ['KICH', 'KIRC', 'KIRP'],
+    #     ['THCA', 'PAAD'],
+    # ]
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    default_result_dir = 'results/subtyping_test/correlation-fit_intercept=False-val_split=0.2-n_bootstraps=2-dry_run=False-test=False-disease_test=None'
+    default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
     parser.add_argument('--result_dir', type=str, default=default_result_dir)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()

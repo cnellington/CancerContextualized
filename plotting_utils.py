@@ -116,13 +116,14 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
     spectrums_height = len(spectrums) * spectrum_height
     # dendro_height = 100  # pixels
     total_height = heatmap_height + spectrums_height + dendro_height
+    total_width = 1400
     heatmap_frac = heatmap_height / total_height
     spectrums_frac = spectrums_height / total_height
     spectrum_frac = spectrums_frac / len(spectrums)
-    heatmap_x_frac = 0.7
+    heatmap_x_frac = 0.6
     cbar_legend_x = 0.72
-    cbar_width = 80 / total_height
-    legend_x = cbar_legend_x + cbar_width + 0.02
+    cbar_width = 100 / total_width
+    legend_x = cbar_legend_x + cbar_width + 0.05
     divider = 0.003
 
     # row normalize
@@ -178,6 +179,14 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
             colorscale = color
             legend_kwargs = {'showscale': False}
             if show_legend:
+                max_val = np.max(spectrum_filtered)
+                min_val = np.min(spectrum_filtered)
+                tickvals = [min_val, (max_val - min_val) / 2 + min_val, max_val]
+                # Compress to 2 sig figs, display as int
+                ticktext = [str(int(float(f"{min_val:.1E}"))), str(int(float(f"{(max_val - min_val) / 2 + min_val:.1E}"))), str(int(float(f"{max_val:.1E}")))] 
+                colorbar_title = spectrum_label
+                if "-log" in spectrum_label:
+                    colorbar_title = spectrum_label.split(" (-log")[0]
                 legend_kwargs.update({
                     'showscale': True,
                     'colorbar_orientation': 'h',
@@ -187,9 +196,11 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
                     'colorbar_y': 1.095 - (num_colorbars * (80 / total_height)) + (colorbar_i) * (80 / total_height),
                     'colorbar_len': 80 / total_height,
                     'colorbar_thickness': 15,
-                    'colorbar_tickvals': [np.min(spectrum_filtered), np.round(np.mean(spectrum_filtered)),
-                                         np.max(spectrum_filtered)],
-                    'colorbar_title': dict(text=spectrum_label, side='top'),
+                    'colorbar_tickvals': tickvals,
+                    'colorbar_ticktext': ticktext,
+                    'colorbar_tickfont_size': 10,
+                    'colorbar_title': dict(text=colorbar_title, side='top'),
+                    'colorbar_title_font_size': 13,
                 })
                 colorbar_i += 1
             oncoplot_fig = go.Figure(data=go.Heatmap(
@@ -241,7 +252,7 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
             #             legendgroup = 'Networks',
             colorbar_orientation='v',
             colorbar_xanchor='left',
-            colorbar_x=0.7,
+            colorbar_x=heatmap_x_frac,
             colorbar_yanchor='bottom',
             colorbar_y=0.0,
             colorbar_len=heatmap_frac,
@@ -259,7 +270,7 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
 
     # Edit Layout
     fig.update_layout({
-        'width': 1200,
+        'width': total_width,
         'height': total_height,
         'showlegend': True,
         'hovermode': 'closest',
@@ -348,7 +359,7 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
     # Plot!
     if savepath is None:
         savepath = 'tempplot.pdf'
-    fig.write_image(savepath, scale=2.)
+    fig.write_image(savepath, scale=1.)
     return IFrame(savepath, width=1000, height=total_height)
 
 
