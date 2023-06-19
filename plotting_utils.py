@@ -92,7 +92,7 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
             )
         )
     spectrum_vals = np.zeros(len(spectrum))
-    for i, specval in enumerate(pd.unique(spectrum)):
+    for i, specval in enumerate(pd.unique(spectrum)):  # pd retains ordering
         spectrum_vals[spectrum == specval] = i
     spectrum_vals[pd.isnull(spectrum)] = np.nan
     heatmap = go.Figure(

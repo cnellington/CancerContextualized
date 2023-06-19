@@ -208,7 +208,7 @@ def update_surv_pvals(split, experiment, diseases, pval):
     # for diseases in [['OV'], ['CHOL']]:
     #     print(diseases)
 
-def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_col, savedir=None):
+def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=None):
     data_views = {
     #     'demographic': [],
         'biopsy': [
@@ -281,6 +281,12 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
                 score = new_score
                 k = n_clusters
     subtypes = fcluster(Z, k, criterion=criterion)
+    # Increment by order of appearance
+    subtype_names = {}
+    for subtype in subtypes:
+        if subtype not in subtype_names:
+            subtype_names[subtype] = f"{'+'.join(diseases)}.{subtype_prefix}.{len(subtype_names) + 1}"
+    subtypes = np.array([subtype_names[subtype] for subtype in subtypes])
     score = silhouette_score(squareform(dist_array), metric='precomputed', labels=subtypes)
     disease_covars['Network Subtype'] = subtypes
     print('silhouette score', score)
@@ -516,12 +522,14 @@ def main(data_dir, result_dir, dryrun = True):
     all_subtype_dfs = []
     for disease in np.unique(covars['disease_type'].values):
         subtype_col = 'network_subtypes'
-        disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        subtype_prefix = 'Net'
+        disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
         pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
         pvals_rows.append([disease, 'CoCA Subtypes'] + pvals_row[4:])
         pvals_rows.append([disease, 'Network Subtypes'] + pvals_row[:4])
         subtype_col = 'expression_subtypes'
-        disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, savedir=savedir)
+        subtype_prefix = 'Expr'
+        disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
         expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
         pvals_rows.append([disease, 'Expression Subtypes'] + pvals_row[:4])
         disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df.drop(columns='disease_type'), on='sample_id', how='outer')
