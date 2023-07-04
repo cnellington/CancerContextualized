@@ -123,6 +123,7 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
     heatmap_x_frac = 0.6
     cbar_legend_x = 0.72
     cbar_width = 100 / total_width
+    cbar_height = 80 / total_height
     legend_x = cbar_legend_x + cbar_width + 0.05
     divider = 0.003
 
@@ -179,28 +180,34 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
             colorscale = color
             legend_kwargs = {'showscale': False}
             if show_legend:
-                max_val = np.max(spectrum_filtered)
-                min_val = np.min(spectrum_filtered)
+                colorbar_title = spectrum_label
+                if "-log" in spectrum_label:
+                    colorbar_title = colorbar_title.split(" (-log")[0]
+                if "percent" in colorbar_title:
+                    max_val = 100
+                    min_val = 0
+                else:
+                    max_val = np.max(spectrum_filtered)
+                    min_val = np.min(spectrum_filtered)
                 tickvals = [min_val, (max_val - min_val) / 2 + min_val, max_val]
                 # Compress to 2 sig figs, display as int
                 ticktext = [str(int(float(f"{min_val:.1E}"))), str(int(float(f"{(max_val - min_val) / 2 + min_val:.1E}"))), str(int(float(f"{max_val:.1E}")))] 
-                colorbar_title = spectrum_label
-                if "-log" in spectrum_label:
-                    colorbar_title = spectrum_label.split(" (-log")[0]
                 legend_kwargs.update({
                     'showscale': True,
                     'colorbar_orientation': 'h',
                     'colorbar_xanchor': 'left',
                     'colorbar_x': cbar_legend_x,
                     'colorbar_yanchor': 'top',
-                    'colorbar_y': 1.095 - (num_colorbars * (80 / total_height)) + (colorbar_i) * (80 / total_height),
-                    'colorbar_len': 80 / total_height,
+                    'colorbar_y': 1.095 - (num_colorbars * cbar_height) + (colorbar_i) * cbar_height,
+                    'colorbar_len': cbar_width,
                     'colorbar_thickness': 15,
                     'colorbar_tickvals': tickvals,
                     'colorbar_ticktext': ticktext,
                     'colorbar_tickfont_size': 10,
                     'colorbar_title': dict(text=colorbar_title, side='top'),
                     'colorbar_title_font_size': 13,
+                    'zmin': min_val,
+                    'zmax': max_val,
                 })
                 colorbar_i += 1
             oncoplot_fig = go.Figure(data=go.Heatmap(
@@ -368,8 +375,8 @@ if __name__ == '__main__':
     n_features = 10
     n_patients = 100
     networks_dummy = np.random.normal(0, 1, (n_patients, n_features))
-    spectrums = [np.random.randint(0, 5, n_patients) for i in range(n_spectrums)]
-    spectrum_labels = [f'spectrum {i}' for i in range(n_spectrums)]
+    spectrums = [10 * np.random.randint(0, 10, n_patients) for i in range(n_spectrums)]
+    spectrum_labels = [f'spectrum percent {i}' for i in range(n_spectrums)]
     spectrum_types = np.random.choice(['categorical', 'continuous'], n_spectrums, replace=True)
     colors = np.random.choice(['Blues', 'viridis', 'plasma'], n_spectrums, replace=True)
     show_legends = [True] * 5 + [False] * (n_spectrums - 5)

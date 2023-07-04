@@ -469,7 +469,7 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
         plt.title(f'{diseases} {count_col} by {group_col} Crosstabulation\n{specifier}')
     #     plt.tight_layout()
         if savedir is not None:
-            plt.savefig(f'{savedir}/{diseases}-crosstab-{group_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
+            plt.savefig(f'{savedir}/{diseases}-crosstab-{count_col}-{group_col}-{specifier}.pdf', bbox_inches='tight', pad_inches=.5)
         if show:
             plt.show()
         plt.clf()
@@ -513,7 +513,7 @@ def main(data_dir, result_dir, dryrun = True):
     os.makedirs(savedir, exist_ok=True)
     networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
 
-    # pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
+    pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
     # pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
     # pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
 
@@ -524,14 +524,14 @@ def main(data_dir, result_dir, dryrun = True):
         subtype_col = 'network_subtypes'
         subtype_prefix = 'Net'
         disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
-        pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
-        pvals_rows.append([disease, 'CoCA Subtypes'] + pvals_row[4:])
-        pvals_rows.append([disease, 'Network Subtypes'] + pvals_row[:4])
+        net_pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append([disease, 'CoCA Subtypes'] + net_pvals_row[4:])
+        pvals_rows.append([disease, 'Network Subtypes'] + net_pvals_row[:4])
         subtype_col = 'expression_subtypes'
         subtype_prefix = 'Expr'
         disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
         expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
-        pvals_rows.append([disease, 'Expression Subtypes'] + pvals_row[:4])
+        pvals_rows.append([disease, 'Expression Subtypes'] + expr_pvals_row[:4])
         disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df.drop(columns='disease_type'), on='sample_id', how='outer')
         disease_all_subtypes['disease_type'] = disease
         all_subtype_dfs.append(disease_all_subtypes)
