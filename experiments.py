@@ -640,7 +640,7 @@ def main(
     save_contextualized_networks=False,
     save_all_networks=False,
     save_all_bootstraps=False,
-    result_dir="results/tempdir/",
+    result_dir="experiment",
     dry_run=False,
     num_features=50,
     covar_projection=-1,
