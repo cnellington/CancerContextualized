@@ -48,10 +48,13 @@ class NeighborhoodExperiment:
         model="neighborhood",
         data_state=DEFAULT_DATA_STATE,
         n_bootstraps=3,
+        start_bootstrap=0,
         val_split=0.2,
         fit_intercept=False,
         save_models=True,
-        save_networks=False,
+        save_contextualized_networks=False,
+        save_all_networks=False,
+        save_all_bootstraps=False,
         load_saved=False,
         verbose=False,
     ):
@@ -60,7 +63,7 @@ class NeighborhoodExperiment:
             f'{model}\
 -fit_intercept={fit_intercept}\
 -val_split={val_split}\
--n_bootstraps={n_bootstraps}\
+-bootstraps={start_bootstrap}-{start_bootstrap + n_bootstraps - 1}\
 -dry_run={data_state["dry_run"]}\
 -test={data_state["test"]}\
 -disease_test={data_state["disease_test"]}',
@@ -75,10 +78,13 @@ class NeighborhoodExperiment:
         )
         self.data_state = data_state
         self.n_bootstraps = n_bootstraps
+        self.start_bootstrap = start_bootstrap
         self.val_split = val_split
         self.fit_intercept = fit_intercept
         self.save_models = save_models
-        self.save_networks = save_networks
+        self.save_contextualized_networks = save_contextualized_networks
+        self.save_all_networks = save_all_networks
+        self.save_all_bootstraps = save_all_bootstraps
         self.load_saved = load_saved
         # self.savedir += '-'.join([f'{k}={v}' for k, v in data_state.items()])  # dirname too long
         with open(f"{self.savedir}/data_state.json", "w") as f:
@@ -124,14 +130,14 @@ class NeighborhoodExperiment:
         return (X_preds - X_true) ** 2
 
     def run_model(
-        self, model_name, n_bootstraps, val_split, save_networks=False, load_saved=False
+        self, model_name, start_bootstrap, n_bootstraps, val_split, save_networks=False, load_saved=False
     ):
         all_train_preds = []
         all_test_preds = []
         all_models = []
-        for boot_i in range(n_bootstraps):
+        for boot_i in range(start_bootstrap, start_bootstrap + n_bootstraps):
             np.random.seed(boot_i)
-            if n_bootstraps > 1:
+            if n_bootstraps > 1 and start_bootstrap != 0:
                 boot_idx = np.random.choice(
                     len(self.C_train), size=len(self.C_train), replace=True
                 )
@@ -234,55 +240,39 @@ class NeighborhoodExperiment:
             test_mses,
         )
         if save_networks:
-            self.export_networks(all_models)
+            self.export_networks(all_models, model_name)
 
     def process_networks(self, networks):
         # do any processing necessary before using models
         pass
 
-    def export_networks(self, all_models):
-        train_networks = np.zeros(
-            (len(self.C_train), len(self.col_names), len(self.col_names))
-        )
-        test_networks = np.zeros(
-            (len(self.C_test), len(self.col_names), len(self.col_names))
-        )
-        for model in all_models:
-            train_networks_boot, _ = model.predict_networks(self.C_train)
-            train_networks += train_networks_boot / len(all_models)
-            del train_networks_boot  # immediate cleanup to avoid OOM
-            test_networks_boot, _ = model.predict_networks(self.C_test)
-            test_networks += test_networks_boot / len(all_models)
-            del test_networks_boot  # immediate cleanup to avoid OOM
-        train_networks = train_networks.reshape(
-            (train_networks.shape[0], train_networks.shape[1] * train_networks.shape[2])
-        )
-        test_networks = test_networks.reshape(
-            (test_networks.shape[0], test_networks.shape[1] * test_networks.shape[2])
-        )
-        columns = np.array(
+    def export_networks(self, all_models, model_name=""):
+        metadata_cols = ['sample_id', 'Set', 'Bootstrap']
+        network_cols = np.array(
             [[f"{col1}-{col2}" for col2 in self.col_names] for col1 in self.col_names]
-        ).reshape((len(self.col_names) ** 2,))
-        train_networks = np.concatenate(
-            [
-                self.ids_train[:, np.newaxis],
-                [["Train"]] * len(train_networks),
-                train_networks,
-            ],
-            axis=1,
-        )
-        test_networks = np.concatenate(
-            [
-                self.ids_test[:, np.newaxis],
-                [["Test"]] * len(test_networks),
-                test_networks,
-            ],
-            axis=1,
-        )
-        all_networks = np.concatenate([train_networks, test_networks], axis=0)
-        columns = ["sample_id", "Set"] + list(columns)
-        networks_df = pd.DataFrame(data=all_networks, columns=columns)
-        networks_df.to_csv(f"{self.savedir}/networks.csv", index=False)
+        ).reshape((len(self.col_names) ** 2,)).tolist()
+        rows = []
+        for i, model in enumerate(all_models):
+            train_networks, train_offsets = model.predict_networks(self.C_train)
+            train_networks = train_networks.reshape(len(train_networks), -1)
+            # train_offsets = train_offsets.reshape(len(train_offsets), -1) 
+            train_metadata = np.array([self.ids_train, ['Train'] * len(train_networks), [i] * len(train_networks)]).T
+            test_networks, test_offsets = model.predict_networks(self.C_test)
+            test_networks = test_networks.reshape(len(test_networks), -1)
+            # test_offsets = test_offsets.reshape(len(test_offsets), -1) 
+            test_metadata = np.array([self.ids_test, ['Test'] * len(test_networks), [i] * len(test_networks)]).T
+            rows.append(np.concatenate([train_metadata, train_networks], axis=1))
+            rows.append(np.concatenate([test_metadata, test_networks], axis=1))
+            # train_networks += train_networks_boot / len(all_models)
+            # del train_networks_boot  # immediate cleanup to avoid OOM
+            # test_networks += test_networks_boot / len(all_models)
+            # del test_networks_boot  # immediate cleanup to avoid OOM
+        all_networks = np.concatenate(rows, axis=0)
+        all_networks_df = pd.DataFrame(all_networks, columns=metadata_cols + network_cols)
+        if self.save_all_bootstraps:
+            all_networks_df.to_csv(f"{self.savedir}/{model_name}-networks-allboots.csv", index=False)
+        networks_df = all_networks_df.groupby(['sample_id', 'Set']).mean().reset_index().drop(columns='Bootstrap')
+        networks_df.to_csv(f"{self.savedir}/{model_name}-networks.csv", index=False)
 
         reducer = umap.UMAP()
         w = reducer.fit_transform(networks_df.drop(columns=["sample_id", "Set"]).values)
@@ -327,27 +317,32 @@ class NeighborhoodExperiment:
     def run(self):
         # Sets bootstrapped networks, bootstrapped mses
         self.run_model(
-            "Population", self.n_bootstraps, self.val_split, load_saved=self.load_saved
+            "Population", self.start_bootstrap, self.n_bootstraps, self.val_split, load_saved=self.load_saved, save_networks=self.save_all_networks,
         )
         self.run_model(
             "Cluster-specific",
+            self.start_bootstrap,
             self.n_bootstraps,
             self.val_split,
             load_saved=self.load_saved,
+            save_networks=self.save_all_networks,
         )
         if self.disease_test is None:
             self.run_model(
                 "Disease-specific",
+                self.start_bootstrap,
                 self.n_bootstraps,
                 self.val_split,
                 load_saved=self.load_saved,
+                save_networks=self.save_all_networks,
             )
         self.run_model(
             "Contextualized",
+            self.start_bootstrap,
             self.n_bootstraps,
             self.val_split,
             load_saved=self.load_saved,
-            save_networks=self.save_networks,
+            save_networks=self.save_contextualized_networks or self.save_all_networks,
         )
         self.mse_df = pd.DataFrame(data=self.mse_df_rows, columns=self.mse_df_cols)
         self.mse_df.to_csv(f"{self.savedir}/mse_df.csv", index=False)
@@ -631,7 +626,7 @@ class BayesianExperiment(NeighborhoodExperiment):
             fit_intercept=False, project_to_dag=project_to_dag, verbose=verbose
         )
         self.project_to_dag = project_to_dag
-        self.savedir += f"-project_to_dag={project_to_dag}"
+        # self.savedir += f"-project_to_dag={project_to_dag}"
 
 
 def main(
@@ -639,15 +634,19 @@ def main(
     fit_intercept=True,
     val_split=0.2,
     n_bootstraps=30,
+    start_bootstrap=0,
     save_models=False,
     load_saved=False,
-    save_networks=True,
+    save_contextualized_networks=False,
+    save_all_networks=False,
+    save_all_bootstraps=False,
     result_dir="results/tempdir/",
     dry_run=False,
     num_features=50,
     covar_projection=-1,
     transform="pca",
     feature_selection="population",
+    no_disease_labels=False,
     test=False,
     disease_test=None,
     project_to_dag=False,
@@ -685,18 +684,22 @@ def main(
             "feature_selection": feature_selection,
             "test": test,
             "disease_test": disease_test,
+            "disease_labels": not no_disease_labels,
         }
     )
 
     kwargs = {
         "base_dir": os.path.join("results", result_dir),
         "n_bootstraps": n_bootstraps,
+        "start_bootstrap": start_bootstrap,
         "val_split": val_split,
         "fit_intercept": fit_intercept,
         "data_state": data_state,
         "save_models": save_models,
         "load_saved": load_saved,
-        "save_networks": save_networks,
+        "save_contextualized_networks": save_contextualized_networks,
+        "save_all_networks": save_all_networks,
+        "save_all_bootstraps": save_all_bootstraps,
     }
     if network_type == "bayesian":
         kwargs.update(
@@ -718,15 +721,19 @@ if __name__ == "__main__":
     parser.add_argument("--fit_intercept", default=False, action="store_true")
     parser.add_argument("--val_split", type=float, default=0.2)
     parser.add_argument("--n_bootstraps", type=int, default=2)
+    parser.add_argument("--start_bootstrap", type=int, default=0)
     parser.add_argument("--save_models", default=False, action="store_true")
     parser.add_argument("--load_saved", default=False, action="store_true")
-    parser.add_argument("--save_networks", default=False, action="store_true")
+    parser.add_argument("--save_contextualized_networks", default=False, action="store_true")
+    parser.add_argument("--save_all_networks", default=False, action="store_true")
+    parser.add_argument("--save_all_bootstraps", default=False, action="store_true")
     parser.add_argument("--result_dir", type=str, default="experiment")
     parser.add_argument("--dry_run", default=False, action="store_true")
     parser.add_argument("--num_features", type=int, default=50)
     parser.add_argument("--covar_projection", type=int, default=200)
     parser.add_argument("--transform", type=str, default="pca")
     parser.add_argument("--feature_selection", type=str, default="population")
+    parser.add_argument("--no_disease_labels", default=False, action="store_true")
     parser.add_argument("--test", default=False, action="store_true")
     parser.add_argument("--disease_test", type=str, default=None)
     parser.add_argument("--project_to_dag", default=False, action="store_true")

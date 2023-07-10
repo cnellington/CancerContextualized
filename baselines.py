@@ -326,10 +326,15 @@ class BayesianNetwork(NeighborhoodSelection):
 
     def predict_networks(self, C, avg_bootstraps=True):
         n = len(C)
-        Ws = [self.models[i].get_params(n)[0] for i in range(len(self.models))]
+        Ws, mus = [], []
+        for model in self.models:
+            W, mu = model.get_params(n, project_to_dag=self.project_to_dag)
+            Ws.append(W)
+            mus.append(mu)
         if avg_bootstraps:
             Ws = np.mean(Ws, axis=0)
-        return Ws
+            mus = np.mean(mus, axis=0)
+        return Ws, mus
 
     def predict(self, C, X, avg_bootstraps=True):
         X_preds = []
@@ -454,8 +459,11 @@ class GroupedNetworks:
         mus = np.zeros((len(labels), self.p))
         for label in np.unique(labels):
             label_idx = labels == label
-            networks[label_idx], mus[label_idx] = self.models[label].predict(label_idx.sum())
-        return networks
+            if label in self.models:
+                networks[label_idx], mus[label_idx] = self.models[label].predict_networks(C[label_idx])
+            else:
+                continue  # no training data for this label, probably only in the test set. Leave predictions as zeros
+        return networks, mus
 
     def predict(self, C, X):
         labels = C

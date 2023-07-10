@@ -77,7 +77,7 @@ for fit_intercept in [True, False]:
         fit_intercept=fit_intercept,
         data_state=data_state,
         save_models=save_models,
-        save_networks=save_networks,
+        save_contextualized_networks=save_networks,
     )
     experiment.run()
 
