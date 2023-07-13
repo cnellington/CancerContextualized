@@ -72,7 +72,9 @@ def write_plot_dfs(mean_df, std_df, d):
 
 def plot_disease_cv(final_plot_df, result_dir):
     n_diseases = final_plot_df['Disease'].nunique()
+    final_plot_df = final_plot_df.sort_values(by=['Disease'])
     fig, ax = plt.subplots(figsize=(n_diseases + 5, 5))
+   # order = sorted(final_plot_df['Disease'])
     sns.barplot(
         final_plot_df,
         x='Disease',
@@ -82,11 +84,10 @@ def plot_disease_cv(final_plot_df, result_dir):
         palette = ['lightblue', 'deepskyblue', 'orange'],
         errorbar='sd',
         capsize=0.05,
-    #     edgecolor='black',
         ax=ax
     )
     plt.xlim(-1, n_diseases)
-    plt.ylim(0, 10)
+    plt.ylim(0, 7)
     ax.plot(list(range(-1, n_diseases + 1)), [1] * (n_diseases + 2), linestyle='dashed', color='lightgrey')
 
     labels = [f'{label}' for label in final_plot_df['Disease'].unique()]
@@ -96,44 +97,26 @@ def plot_disease_cv(final_plot_df, result_dir):
     ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left', fontsize=14)
 
 
-    plt.xlabel('Disease Type (# Training Samples)', fontsize=14)
+    plt.xlabel('Disease Type', fontsize=14)
     plt.ylabel('MSE', fontsize=14)
-    plt.title('Test Errors by Disease Type (Disease Specific CV)', fontsize=14)
+    plt.title('Test Errors by Disease Type (disease-fold cross validation)', fontsize=14)
     plt.tight_layout()
 
-    #plt.savefig(f'{result_dir}/test_diseaseCV.pdf', dpi=300)
+    plt.savefig(f'{result_dir}/test_diseaseCV.pdf', dpi=300)
     plt.show()
     plt.clf()
 
-def plot_aggregated_disease_cv(final_plot_df, result_dir):
+def plot_aggregated_disease_cv(final_model_df, result_dir):
 
     fig, ax = plt.subplots(figsize=(6, 5))
     sns.barplot(
-        final_plot_df,
-        x='Model',
-        y='MSE',
-        order = ['Population', 'Cluster-specific', 'Contextualized'],
-        palette = ['lightblue', 'deepskyblue', 'orange'],
-        #errorbar='sd',
-        ci = None,
-        capsize=0.05,
-    #     edgecolor='black',
-        ax=ax
-    )
-
-    plt.title("Test Errors by Model (Disease Specific CV)", fontsize=14)
-    plt.tight_layout()
-    plt.savefig(f'{result_dir}/noCI_deseaseCV_aggregated.pdf', dpi=300)
-    plt.show()
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    sns.barplot(
-        final_plot_df,
+        final_model_df,
         x='Model',
         y='MSE',
         order = ['Population', 'Cluster-specific', 'Contextualized'],
         palette = ['lightblue', 'deepskyblue', 'orange'],
         errorbar='sd',
+        #ci = None,
         capsize=0.05,
     #     edgecolor='black',
         ax=ax
@@ -143,10 +126,8 @@ def plot_aggregated_disease_cv(final_plot_df, result_dir):
     plt.tight_layout()
     plt.savefig(f'{result_dir}/deseaseCV_aggregated.pdf', dpi=300)
     plt.show()
+    plt.clf()
 
-# def write_aggregated_diseaseCV(final_plot_df, result_dir):
-#     final_plot_df = final_plot_df.groupby(['Model']).mean().reset_index()
-#     final_plot_df.to_csv(f'{result_dir}/diseaseCV_aggregated.csv', index=False)
 
 #%%
 def main(args):
@@ -197,11 +178,17 @@ def main(args):
 
     final_plot_df = pd.concat(plot_dfs)
     final_disease_cv_df = pd.concat(disease_cv_dfs)
-    #final_disease_cv_df.to_csv(f"{result_dir}/disease_cv_df.csv", index=False)
+    final_disease_cv_df.to_csv(f"{result_dir}/disease_cv_df.csv", index=False)
 
     plot_disease_cv(final_plot_df, result_dir)
-    plot_aggregated_disease_cv(final_plot_df, result_dir)
 
+    plot_model_dfs = []
+    for m in all_mse_df['Model'].unique():
+        model_df = all_mse_df.loc[all_mse_df['Model'] == m]
+        model_df = model_df[model_df['Set'] == 'Test (Bootstrapped)']
+        plot_model_dfs.append(model_df)
+    final_model_df = pd.concat(plot_model_dfs)
+    plot_aggregated_disease_cv(final_model_df, result_dir)
 
 if __name__ == "__main__":
     torch.set_float32_matmul_precision("medium")

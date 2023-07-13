@@ -59,3 +59,22 @@ aggregated_bar_plot = use final_disease_mse_df to make bar plot (not grouped any
                       bar height = final_disease_mse_df.groupby(["Model"])["MSE"].mean()
                       bar std = final_disease_mse_df.groupby(["Model"])["MSE"].std()
 
+#%%
+
+data = {
+    'Category': ['C', 'C', 'B', 'B', 'A', 'A'],
+    'Group': ['X', 'Y', 'X', 'Y', 'X', 'Y'],
+    'Value': [10, 15, 8, 12, 9, 11]
+}
+df = pd.DataFrame(data)
+
+# Plotting grouped bar plot
+sns.barplot(x='Category', y='Value', hue='Group', data=df)
+
+# Add labels and title
+plt.xlabel('Category')
+plt.ylabel('Value')
+plt.title('Grouped Bar Plot')
+
+# Show the plot
+plt.show()
