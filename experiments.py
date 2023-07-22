@@ -134,6 +134,8 @@ class NeighborhoodExperiment:
     ):
         all_train_preds = []
         all_test_preds = []
+        all_train_networks = []
+        all_test_networks = []
         all_models = []
         for boot_i in range(start_bootstrap, start_bootstrap + n_bootstraps):
             np.random.seed(boot_i)
@@ -198,8 +200,10 @@ class NeighborhoodExperiment:
                 boot_mses,
             )
             train_preds = model.predict(C_train, self.X_train)
+            train_networks, train_offsets = model.predict_networks(C_train)
             train_mses = self.get_mses(train_preds, self.X_train)
             all_train_preds.append(train_preds)
+            all_train_networks.append(train_networks)
             self.write_rows(
                 boot_i,
                 self.ids_train,
@@ -209,8 +213,10 @@ class NeighborhoodExperiment:
                 train_mses,
             )
             test_preds = model.predict(C_test, self.X_test)
+            test_networks, test_offsets = model.predict_networks(C_test)
             test_mses = self.get_mses(test_preds, self.X_test)
             all_test_preds.append(test_preds)
+            all_test_networks.append(test_networks)
             self.write_rows(
                 boot_i, self.ids_test, model_name, "Test", self.labels_test, test_mses
             )
@@ -240,26 +246,24 @@ class NeighborhoodExperiment:
             test_mses,
         )
         if save_networks:
-            self.export_networks(all_models, model_name)
+            self.export_networks(all_train_networks, all_test_networks, model_name)
 
     def process_networks(self, networks):
         # do any processing necessary before using models
         pass
 
-    def export_networks(self, all_models, model_name=""):
+    def export_networks(self, all_train_networks, all_test_networks, model_name=""):
         metadata_cols = ['sample_id', 'Set', 'Bootstrap']
         network_cols = np.array(
             [[f"{col1}-{col2}" for col2 in self.col_names] for col1 in self.col_names]
         ).reshape((len(self.col_names) ** 2,)).tolist()
         rows = []
-        for i, model in enumerate(all_models):
-            train_networks, train_offsets = model.predict_networks(self.C_train)
+        for i, (train_networks, test_networks) in enumerate(zip(all_train_networks, all_test_networks)): 
             train_networks = train_networks.reshape(len(train_networks), -1)
-            # train_offsets = train_offsets.reshape(len(train_offsets), -1) 
-            train_metadata = np.array([self.ids_train, ['Train'] * len(train_networks), [i] * len(train_networks)]).T
-            test_networks, test_offsets = model.predict_networks(self.C_test)
             test_networks = test_networks.reshape(len(test_networks), -1)
+            # train_offsets = train_offsets.reshape(len(train_offsets), -1) 
             # test_offsets = test_offsets.reshape(len(test_offsets), -1) 
+            train_metadata = np.array([self.ids_train, ['Train'] * len(train_networks), [i] * len(train_networks)]).T
             test_metadata = np.array([self.ids_test, ['Test'] * len(test_networks), [i] * len(test_networks)]).T
             rows.append(np.concatenate([train_metadata, train_networks], axis=1))
             rows.append(np.concatenate([test_metadata, test_networks], axis=1))
@@ -311,7 +315,7 @@ class NeighborhoodExperiment:
         plt.yticks([])
         plt.title("Network Embedding", fontsize=22)
         plt.tight_layout()
-        plt.savefig(f"{self.savedir}/network_embedding.pdf", dpi=300)
+        plt.savefig(f"{self.savedir}/{model_name}_network_embedding.pdf", dpi=300)
         plt.clf()
 
     def run(self):
@@ -641,7 +645,7 @@ def main(
     save_all_networks=False,
     save_all_bootstraps=False,
     result_dir="experiment",
-    dry_run=False,
+    dryrun=False,
     num_features=50,
     covar_projection=-1,
     transform="pca",
@@ -676,7 +680,7 @@ def main(
     data_state = DEFAULT_DATA_STATE.copy()
     data_state.update(
         {
-            "dry_run": dry_run,
+            "dry_run": dryrun,
             "num_features": num_features,
             "covar_projection": covar_projection,
             # 'gene_list': gene_list,
@@ -728,7 +732,7 @@ if __name__ == "__main__":
     parser.add_argument("--save_all_networks", default=False, action="store_true")
     parser.add_argument("--save_all_bootstraps", default=False, action="store_true")
     parser.add_argument("--result_dir", type=str, default="experiment")
-    parser.add_argument("--dry_run", default=False, action="store_true")
+    parser.add_argument("--dryrun", default=False, action="store_true")
     parser.add_argument("--num_features", type=int, default=50)
     parser.add_argument("--covar_projection", type=int, default=200)
     parser.add_argument("--transform", type=str, default="pca")
