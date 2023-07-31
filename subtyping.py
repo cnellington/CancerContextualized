@@ -27,7 +27,7 @@ from plotting_utils import plot_dendrogram, cdist
 numeric_covars = None
 
 
-def load_data(data_dir, result_dir, dryrun=False):
+def load_data(data_dir, networks_file, dryrun=False):
     covariate_files = [
         'clinical_covariates.csv',
         'snv_covariates.csv',
@@ -38,12 +38,14 @@ def load_data(data_dir, result_dir, dryrun=False):
     covars = pd.read_csv(data_dir + covariate_files[0], header=0)
     for covariate_file in covariate_files[1:]:
         covars = covars.merge(pd.read_csv(data_dir + covariate_file, header=0), on='sample_id', how='inner')
+
     survival_df = pd.read_csv(data_dir + 'survival.csv')
     gene_expression = pd.read_csv(data_dir + 'transcriptomic_features.csv')
     metagene_expression = pd.read_csv(data_dir + 'metagene_expression.csv')
     
-    networks = pd.read_csv(f'{result_dir}/networks.csv').drop(columns='Set')
+    networks = pd.read_csv(networks_file).drop(columns='Set')
     networks = covars.merge(networks, on='sample_id', how='inner')[networks.columns]
+    networks = networks.drop(columns=[col for col in networks.columns if len(networks[col].unique()) == 1])
     
     # Load known subtypes
     known_subtypes_df = pd.read_csv(data_dir + 'tcga_subtypes.csv')
@@ -90,16 +92,60 @@ def load_data(data_dir, result_dir, dryrun=False):
         'age_at_diagnosis',
         'percent_neutrophil_infiltration',
         'percent_monocyte_infiltration',
-        'percent_normal_cells',
-        'percent_tumor_nuclei',
+        # 'percent_normal_cells',
+        # 'percent_tumor_nuclei',
         'percent_lymphocyte_infiltration',
         'percent_stromal_cells',
-        'percent_tumor_cells',
+        # 'percent_tumor_cells',
+        'Purity',
+        'Ploidy',
+        'WGD',
         'stage',
     ]
     numeric_covars += [col for col in covars.columns if 'Mutated' in col or 'Gene' in col or 'Arm' in col or 'Allele' in col]
     for col in numeric_covars:
         covars[col] = pd.to_numeric(covars[col], errors='coerce')
+    
+    # Do a little data cleaning to make the plots nice
+    # Drop columns with 'X' 'Arm' and 'Loss of Heterozygosity' in the name
+    drop_x = [col for col in covars.columns if 'X' in col and 'Arm' in col and 'Loss of Heterozygosity' in col]
+    covars = covars.drop(columns=drop_x)
+    # Change duplicated to amplified by checking if number of copies is greater than 2 when WGD is true
+    genes = [col.split(' Gene')[0] for col in covars.columns if 'Gene' in col]
+    arms = [col.split(' Major Arm')[0] for col in covars.columns if 'Major Arm' in col]
+    # Ploidy = tumor_ploidy * purity + 2 * (1 - purity)
+    # (ploidy - 2 * (1 - purity)) / purity = tumor_ploidy
+    tumor_ploidy = (covars['Ploidy'] - 2 * (1 - covars['Purity'])) / covars['Purity']
+    gene_amplified_cols = []
+    for gene in genes:
+        n_major_copies = covars[f'{gene} Major Allele Copies']
+        n_minor_copies = covars[f'{gene} Minor Allele Copies']
+        covars[f'{gene} Major Allele Amplified'] = n_major_copies > tumor_ploidy
+        covars[f'{gene} Minor Allele Amplified'] = n_minor_copies > tumor_ploidy
+        gene_amplified_cols.append(f'{gene} Major Allele Amplified')
+        gene_amplified_cols.append(f'{gene} Minor Allele Amplified')
+    arm_amplified_cols = []
+    for arm in arms:
+        n_major_copies = covars[f'{arm} Major Arm Copies']
+        n_minor_copies = covars[f'{arm} Minor Arm Copies']
+        covars[f'{arm} Major Arm Amplified'] = n_major_copies > tumor_ploidy
+        covars[f'{arm} Minor Arm Amplified'] = n_minor_copies > tumor_ploidy
+        arm_amplified_cols.append(f'{arm} Major Arm Amplified')
+        arm_amplified_cols.append(f'{arm} Minor Arm Amplified') 
+    # Drop columns with 'Duplicated' in the name
+    drop_duplicated = [col for col in covars.columns if 'Duplicated' in col]
+    covars = covars.drop(columns=drop_duplicated)
+    # Drop columns with 'Copies' in the name
+    # drop_copies = [col for col in covars.columns if 'Copies' in col]
+    # covars = covars.drop(columns=drop_copies)
+    # Clean up numeric_covars
+    numeric_covars += gene_amplified_cols + arm_amplified_cols
+    numeric_covars = [col for col in numeric_covars if col not in drop_x + drop_duplicated]
+    # Convert age from days to years
+    covars['age_at_diagnosis'] = covars['age_at_diagnosis'] // 365.25
+    covars = covars.copy()  # Clean up fragmentation
+
+
     
     if dryrun:
         dryrun_ids = covars[['sample_id', 'submitter_id']][covars['disease_type'].isin(['LGG', 'GBM'])]
@@ -182,6 +228,7 @@ def pancancer_dendrogram(data, covars, title, savepath):
         savepath=legend_savepath,
         dendro_height=1000,
     )
+    plt.close('all')
 
 
 survival_pvals = {}
@@ -214,13 +261,13 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
         'biopsy': [
             'percent_neutrophil_infiltration',
             'percent_monocyte_infiltration',
-            'percent_normal_cells',
-            'percent_tumor_nuclei',
+            # 'percent_normal_cells',
+            # 'percent_tumor_nuclei',
             'percent_lymphocyte_infiltration',
             'percent_stromal_cells',
-            'percent_tumor_cells',
+            # 'percent_tumor_cells',
         ],
-        'arm-level scna': [col for col in covars.columns if 'Arm' in col and 'Copies' not in col],
+        'arm-level scna': [col for col in covars.columns if 'Arm' in col and 'Copies' not in col] + ['WGD'],
         'gene-level scna': [col for col in covars.columns if ('Gene' in col or 'Allele' in col) and ('Copies' not in col)],
         'snv': [col for col in covars.columns if 'Mutated' in col],
     }
@@ -281,33 +328,74 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
                 score = new_score
                 k = n_clusters
     subtypes = fcluster(Z, k, criterion=criterion)
+    subtypes_idx = dendrogram(Z, no_plot=True)['leaves']
     # Increment by order of appearance
     subtype_names = {}
-    for subtype in subtypes:
+    for subtype in subtypes[subtypes_idx]:
         if subtype not in subtype_names:
             subtype_names[subtype] = f"{'+'.join(diseases)}.{subtype_prefix}.{len(subtype_names) + 1}"
     subtypes = np.array([subtype_names[subtype] for subtype in subtypes])
     score = silhouette_score(squareform(dist_array), metric='precomputed', labels=subtypes)
     disease_covars['Network Subtype'] = subtypes
     print('silhouette score', score)
-    
-    column_pvals = {col: 1 for col in numeric_covars}
-    for subtype in np.unique(subtypes):
-        subtype_idx = subtypes == subtype
-        for col in numeric_covars:
-            if col in redundant_features:
-                continue
-            col_samples = disease_covars[col].values
-            nan_idx = pd.isnull(col_samples)
-            col_samples = col_samples[~nan_idx]
-            col_subtype_idx = subtype_idx[~nan_idx]
-            null_set = col_samples[~col_subtype_idx]
-            test_set = col_samples[col_subtype_idx]
-            _, pval = ttest_ind(test_set, null_set)
-            if np.isnan(pval):
-                pval = 1
-            if pval < column_pvals[col]:
-                column_pvals[col] = pval
+
+    def get_pval(col):
+        if col in redundant_features:
+            return 1
+        # Check if the column contains strings
+        col_samples = disease_covars[col].values
+        nan_idx = pd.isnull(col_samples)
+        col_samples = col_samples[~nan_idx]
+        col_subtypes = subtypes[~nan_idx]
+        best_pval = 1
+        if disease_covars[col].dtype == 'object':
+            for subtype in np.unique(col_subtypes):
+                for col_val in pd.unique(col_samples):
+                    subtype_idx = col_subtypes == subtype
+                    col_onehot = (col_samples == col_val).astype(int)
+                    null_set = col_onehot[~subtype_idx]
+                    test_set = col_onehot[subtype_idx]
+                    _, pval = ttest_ind(test_set, null_set)
+                    if np.isnan(pval):
+                        pval = 1
+                    if pval < best_pval:
+                        best_pval = pval
+        else:
+            for subtype in np.unique(col_subtypes):
+                subtype_idx = col_subtypes == subtype 
+                null_set = col_samples[~subtype_idx]
+                test_set = col_samples[subtype_idx]
+                _, pval = ttest_ind(test_set, null_set)
+                if np.isnan(pval):
+                    pval = 1
+                if pval < best_pval:
+                    best_pval = pval
+        return best_pval
+    column_pvals = {col: get_pval(col) for col in numeric_covars}
+    column_pvals.update({
+        'race': get_pval('race'),
+        'gender': get_pval('gender'),
+    })
+
+    # column_pvals = {col: 1 for col in numeric_covars}
+    # for subtype in np.unique(subtypes):
+    #     subtype_idx = subtypes == subtype
+    #     for col in numeric_covars:
+    #         if col in redundant_features:
+    #             continue
+    #         col_samples = disease_covars[col].values
+    #         nan_idx = pd.isnull(col_samples)
+    #         col_samples = col_samples[~nan_idx]
+    #         col_subtype_idx = subtype_idx[~nan_idx]
+    #         null_set = col_samples[~col_subtype_idx]
+    #         test_set = col_samples[col_subtype_idx]
+    #         _, pval = ttest_ind(test_set, null_set)
+    #         if np.isnan(pval):
+    #             pval = 1
+    #         if pval < column_pvals[col]:
+    #             column_pvals[col] = pval
+    # sex_pval = 1.0
+    # for subtype in np.nique
     
     max_view_features = 10
     max_feature_pval = 1e-4
@@ -316,13 +404,15 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
     col_colors = []
     col_types = []
     col_legends = []
-    for (data_view, view_cols), color in zip(data_views.items(), ['Purples', 'Blues', 'Greens', 'Reds', 'Oranges']):
+    pval_column = lambda col: f"{col} (-log(p) = {round(-np.log10(column_pvals[col]), 1)})" if col in column_pvals else col
+    for (data_view, view_cols), color in zip(data_views.items(), ['Purples', 'Greens', 'Blues', 'Reds', 'Oranges']):
         view_pvals = np.array([column_pvals[col] for col in view_cols])
         view_idx = np.argsort(view_pvals)[:max_view_features]
         view_idx = view_idx[view_pvals[view_idx] < max_feature_pval]
         view_names = np.array(view_cols)[view_idx].tolist()
         view_pvals = view_pvals[view_idx].tolist()
-        view_labels = [f"{col} (-log(p) = {round(-np.log10(pval), 1)})" for col, pval in zip(view_names, view_pvals)]
+        # view_labels = [f"{col} (-log(p) = {round(-np.log10(pval), 1)})" for col, pval in zip(view_names, view_pvals)]
+        view_labels = [pval_column(col) for col in view_names]
         col_labels += view_labels
         col_samples += [disease_covars[col].values for col in view_names]
         col_colors += [color] * len(view_labels)
@@ -337,18 +427,19 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
 #     print(list(zip(col_names, col_pvals, col_colors)))
     
     # add mandatory features to plot and concatenate
-    always_names = ['Network Subtype', 'TCGA Subtype', 'disease_type', 'race', 'gender', 'age_at_diagnosis', 'stage']
-    always_pvals = []
-    for name in always_names:
-        if name in column_pvals:
-            always_pvals.append(column_pvals[col])
-        else:
-            always_pvals.append(1)
-    always_titles = ['Network Subtype', 'TCGA Subtype', 'Disease Type', 'Race', 'Gender', 'Age at Diagnosis', 'Stage']
-    always_labels = [f"{title} (-log(p) = {round(-np.log10(pval), 1)})" if pval < 1 else title for title, pval in zip(always_titles, always_pvals)]
-    always_colors = ['tab20b', 'tab20', 'Pastel1', 'rainbow', 'cool', 'Greys', 'Reds']
+    always_names = ['Network Subtype', 'TCGA Subtype', 'disease_type', 'race', 'gender', 'age_at_diagnosis', 'stage', 'Purity', 'Ploidy']
+    # for name in always_names:
+    #     if name in column_pvals:
+    #         always_pvals.append(column_pvals[col])
+    #     else:
+    #         always_pvals.append(1)
+    always_titles = [pval_column(col) for col in always_names]
+    title_labels = ['Network Subtype', 'TCGA Subtype', 'Disease Type', 'Race', 'Sex', 'Age at Diagnosis', 'Stage', 'Purity', 'Ploidy']
+    always_labels = [title.replace(col, label) for col, title, label in zip(always_names, always_titles, title_labels)]
+    # always_labels = [f"{title} (-log(p) = {round(-np.log10(pval), 1)})" if pval < 1 else title for title, pval in zip(always_titles, always_pvals)]
+    always_colors = ['tab20b', 'tab20', 'Pastel1', 'rainbow', 'cool_r', 'Greys', 'Reds', 'Purples', 'Purples']
     always_samples = [disease_covars[col].values for col in always_names]
-    always_types = ['categorical', 'categorical', 'categorical', 'categorical', 'categorical', 'continuous', 'categorical']
+    always_types = ['categorical', 'categorical', 'categorical', 'categorical', 'categorical', 'continuous', 'categorical', 'continuous', 'continuous']
     always_legends = [True] * len(always_names)
     
     all_labels = always_labels + col_labels
@@ -384,6 +475,7 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
             show_legends=oncoplot_legends,
             savepath=f'{savedir}/{diseases}-{subtype_col}-oncoplot.pdf' if savedir is not None else None,
         ) 
+    plt.close('all')
     return disease_subtypes
 
 
@@ -495,7 +587,8 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
         known_mv_pval_outer, known_pair_pval_outer = np.nan, np.nan
         subtype_mv_pval_outer, subtype_pair_pval_outer = np.nan, np.nan
         print('no outer plots')
-        
+
+    plt.close('all') 
     return [
         subtype_mv_pval, 
         subtype_pair_pval, 
@@ -508,12 +601,13 @@ def do_extra_plots(diseases, disease_subtypes, known_subtypes_df, survival_df, s
     ]
 
 
-def main(data_dir, result_dir, dryrun = True):
+def main(data_dir, networks_file, dryrun = True):
+    result_dir = '/'.join(networks_file.split('/')[:-1])
     savedir = f'{result_dir}/subtyping'
     os.makedirs(savedir, exist_ok=True)
-    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, result_dir, dryrun=dryrun)
+    networks, covars, gene_expression, metagene_expression, survival_df, known_subtypes_df = load_data(data_dir, networks_file, dryrun=dryrun)
 
-    pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
+    # pancancer_dendrogram(networks, covars, 'Pancancer Network Organization', f"{savedir}/pancancer_network_dendrogram.pdf") 
     # pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
     # pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
 
@@ -532,7 +626,7 @@ def main(data_dir, result_dir, dryrun = True):
         disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
         expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
         pvals_rows.append([disease, 'Expression Subtypes'] + expr_pvals_row[:4])
-        disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df.drop(columns='disease_type'), on='sample_id', how='outer')
+        disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df[known_subtypes_df['disease_type'] == disease].drop(columns='disease_type'), on='sample_id', how='outer')
         disease_all_subtypes['disease_type'] = disease
         all_subtype_dfs.append(disease_all_subtypes)
     pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
@@ -551,8 +645,9 @@ def main(data_dir, result_dir, dryrun = True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
-    parser.add_argument('--result_dir', type=str, default=default_result_dir)
+    # default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
+    default_networks = 'results/230721_metagenes_30boots_intercept/markov-fit_intercept=True-val_split=0.2-bootstraps=0-29-dry_run=False-test=True-disease_test=None/Contextualized-networks.csv'
+    parser.add_argument('--networks', type=str, default=default_networks)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()
-    main(args.data_dir, args.result_dir, dryrun = args.dryrun)
+    main(args.data_dir, args.networks, dryrun = args.dryrun)
