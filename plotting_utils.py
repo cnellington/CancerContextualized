@@ -60,6 +60,10 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
         created using invisible scatter plots on xaxis1000 and yaxis100
     Motivated by heatmaps that only support continuous variables.
     """
+    if '-log' in legendgroup:
+        legendgroup_title = legendgroup.split(' (-log')[0]
+    else: 
+        legendgroup_title = legendgroup
     spectrum_filtered = spectrum[~pd.isnull(spectrum)]
     num_categories = int(len(np.unique(spectrum_filtered)))
     if type(color) == list:
@@ -69,7 +73,8 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
     if len(rgblist) < 2:  # catch bad colors
         rgblist = ['rgb(0,0,0)', 'rgb(0,0,0)']
     legend = go.Figure()
-    for rgb, specval in zip(rgblist, pd.unique(spectrum_filtered)):
+    # spectrum_filtered = spectrum_filtered.astype(str)
+    for rgb, specval in zip(rgblist, np.unique(spectrum_filtered)):
         legend.add_trace(
             go.Scatter(
                 x=[0],
@@ -77,7 +82,7 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
                 xaxis='x1000',
                 yaxis='y1000',
                 legendgroup=legendgroup,
-                legendgrouptitle_text=legendgroup,
+                legendgrouptitle_text=legendgroup_title,
                 legendrank=rank,
                 name=str(specval),
                 mode='markers',
@@ -92,7 +97,7 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
             )
         )
     spectrum_vals = np.zeros(len(spectrum))
-    for i, specval in enumerate(pd.unique(spectrum)):  # pd retains ordering
+    for i, specval in enumerate(np.unique(spectrum_filtered)):  # pd retains ordering, np sorts
         spectrum_vals[spectrum == specval] = i
     spectrum_vals[pd.isnull(spectrum)] = np.nan
     heatmap = go.Figure(
@@ -182,16 +187,22 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
             if show_legend:
                 colorbar_title = spectrum_label
                 if "-log" in spectrum_label:
-                    colorbar_title = colorbar_title.split(" (-log")[0]
-                if "percent" in colorbar_title:
-                    max_val = 100
-                    min_val = 0
-                else:
-                    max_val = np.max(spectrum_filtered)
-                    min_val = np.min(spectrum_filtered)
+                    colorbar_title = colorbar_title.split(" (-log")[0] 
+                # if "percent" in colorbar_title:
+                #     max_val = 100
+                #     min_val = 0
+                # else:
+                max_val = np.max(spectrum_filtered)
+                min_val = np.min(spectrum_filtered)
                 tickvals = [min_val, (max_val - min_val) / 2 + min_val, max_val]
-                # Compress to 2 sig figs, display as int
-                ticktext = [str(int(float(f"{min_val:.1E}"))), str(int(float(f"{(max_val - min_val) / 2 + min_val:.1E}"))), str(int(float(f"{max_val:.1E}")))] 
+                # Compress to 2 sig figs. If the values are >1, display as int.
+                if 'Purity' in spectrum_label:
+                    ticktext = [str(float(f"{min_val:.2f}")), str(float(f"{(max_val - min_val) / 2 + min_val:.2f}")), str(float(f"{max_val:.2f}"))]
+                elif max_val < 10:
+                    ticktext = [str(float(f"{min_val:.1E}")), str(float(f"{(max_val - min_val) / 2 + min_val:.1E}")), str(float(f"{max_val:.1E}"))]
+                else:
+                    ticktext = [str(int(float(f"{min_val:.1E}"))), str(int(float(f"{(max_val - min_val) / 2 + min_val:.1E}"))), str(int(float(f"{max_val:.1E}")))]
+                # ticktext = [str(int(float(f"{min_val:.1E}"))), str(int(float(f"{(max_val - min_val) / 2 + min_val:.1E}"))), str(int(float(f"{max_val:.1E}")))] 
                 legend_kwargs.update({
                     'showscale': True,
                     'colorbar_orientation': 'h',
