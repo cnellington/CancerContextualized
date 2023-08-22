@@ -169,6 +169,7 @@ def get_rgblist(colors):
 
 def pancancer_dendrogram(data, covars, title, savepath):
     plot_df = covars.merge(data, on='sample_id', how='inner')
+    plot_df = plot_df.sort_values(by='disease_type')
 
     disease_rgblist = get_rgblist(['tab20b', 'tab20c'])
     site_rgblist = get_rgblist(['tab20'])
