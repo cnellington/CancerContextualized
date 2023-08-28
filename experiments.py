@@ -50,6 +50,7 @@ class NeighborhoodExperiment:
         n_bootstraps=3,
         start_bootstrap=0,
         val_split=0.2,
+        max_epochs=100,
         fit_intercept=False,
         save_models=True,
         save_contextualized_networks=False,
@@ -63,8 +64,9 @@ class NeighborhoodExperiment:
             f'{model}\
 -fit_intercept={fit_intercept}\
 -val_split={val_split}\
--bootstraps={start_bootstrap}-{start_bootstrap + n_bootstraps - 1}\
--dry_run={data_state["dry_run"]}\
+-max_epochs={max_epochs}\
+-n_bootstraps={start_bootstrap}-{start_bootstrap + n_bootstraps - 1}\
+-dryrun={data_state["dry_run"]}\
 -test={data_state["test"]}\
 -disease_test={data_state["disease_test"]}',
         )
@@ -654,6 +656,7 @@ def main(
     test=False,
     disease_test=None,
     project_to_dag=False,
+    max_epochs=100,
 ):
     network_types = {
         "neighborhood": NeighborhoodExperiment,
@@ -704,6 +707,7 @@ def main(
         "save_contextualized_networks": save_contextualized_networks,
         "save_all_networks": save_all_networks,
         "save_all_bootstraps": save_all_bootstraps,
+        "max_epochs": max_epochs,
     }
     if network_type == "bayesian":
         kwargs.update(
@@ -741,6 +745,7 @@ if __name__ == "__main__":
     parser.add_argument("--test", default=False, action="store_true")
     parser.add_argument("--disease_test", type=str, default=None)
     parser.add_argument("--project_to_dag", default=False, action="store_true")
+    parser.add_argument("--max_epochs", type=int, default=100)
     args = parser.parse_args()
     # CLI overrides
     if args.disease_test is not None:
