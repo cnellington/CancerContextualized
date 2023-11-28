@@ -474,6 +474,7 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
             colors=oncoplot_colors,
             show_legends=oncoplot_legends,
             savepath=f'{savedir}/{diseases}-{subtype_col}-oncoplot.pdf' if savedir is not None else None,
+            n_clusters=k,
         ) 
     plt.close('all')
     return disease_subtypes
@@ -642,6 +643,7 @@ def main(data_dir, networks_file, dryrun = True):
         ['THCA', 'PAAD', 'OV'],  # Endocrine
         ['LIHC', 'CHOL'],  # Liver
     ]
+    disease_groups = [['GBM']]
     pvals_columns = ['disease', 'method', 'mv_shared', 'pair_shared', 'mv_outer', 'pair_outer']
     pvals_rows = []
     all_subtype_dfs = []
@@ -663,8 +665,8 @@ def main(data_dir, networks_file, dryrun = True):
         disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df[known_subtypes_df['disease_type'] == disease_name].drop(columns='disease_type'), on='sample_id', how='outer')
         disease_all_subtypes['disease_type'] = disease_name
         all_subtype_dfs.append(disease_all_subtypes)
-    pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
-    pd.concat(all_subtype_dfs, ignore_index=True).to_csv(f'{savedir}/all_subtypes.csv', index=False)
+    # pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
+    # pd.concat(all_subtype_dfs, ignore_index=True).to_csv(f'{savedir}/all_subtypes.csv', index=False)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
