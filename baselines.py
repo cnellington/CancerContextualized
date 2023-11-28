@@ -184,7 +184,7 @@ class NeighborhoodSelection:
         self.kwargs = kwargs
         self.verbose = verbose
 
-    def fit(self, C, X, n_bootstraps=1, val_split=0.2):
+    def fit(self, C, X, max_epochs=100, n_bootstraps=1, val_split=0.2):
         self.p = X.shape[-1]
         self.models = []
         self.trainers = []
@@ -215,7 +215,7 @@ class NeighborhoodSelection:
                     mode="min"
                 )
                 trainer = pl.Trainer(
-                    max_epochs=100,
+                    max_epochs=max_epochs,
                     accelerator='auto',
                     devices=1,
                     callbacks=[es_callback, checkpoint_callback],
@@ -242,7 +242,7 @@ class NeighborhoodSelection:
                     mode="min"
                 )
                 trainer = pl.Trainer(
-                    max_epochs=100,
+                    max_epochs=max_epochs,
                     accelerator='auto',
                     devices=1,
                     callbacks=[es_callback, checkpoint_callback],

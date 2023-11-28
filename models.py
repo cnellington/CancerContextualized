@@ -35,7 +35,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
         self.trainer_class = MarkovTrainer
         self.verbose = verbose
 
-    def fit(self, C, X, val_split=0.2):
+    def fit(self, C, X, max_epochs=100, val_split=0.2):
         self.p = X.shape[-1]
         model = self.model_class(
             C.shape[-1],
@@ -60,7 +60,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
                 mode="min"
             )
             self.trainer = self.trainer_class(
-                max_epochs=100,
+                max_epochs=max_epochs,
                 accelerator='auto',
                 devices=1,
                 callbacks=[es_callback, checkpoint_callback],
@@ -87,7 +87,7 @@ class ContextualizedNeighborhoodSelectionWrapper:
                 mode="min"
             )
             self.trainer = self.trainer_class(
-                max_epochs=100,
+                max_epochs=max_epochs,
                 accelerator='auto',
                 devices=1,
                 callbacks=[es_callback, checkpoint_callback],
