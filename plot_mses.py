@@ -50,7 +50,7 @@ def plot_mses(mse_df, set_label, savedir, relative_to='Contextualized', ymax=Non
     else:
         plot_df = set_df
 
-    if 'Disease-specific' not in mse_df['Model'] and 'Disease-specific' in order:  # Remove Disease-specific when we don't have it
+    if 'Disease-specific' not in mse_df['Model'].values and 'Disease-specific' in order:  # Remove Disease-specific when we don't have it
         order.remove('Disease-specific')
     palette = [palette_map[model] for model in order]
     fig, ax = plt.subplots(figsize=(5, 5))
@@ -172,7 +172,7 @@ def plot_mses(mse_df, set_label, savedir, relative_to='Contextualized', ymax=Non
         .sort_index()
     )
     if nocount:
-        x_labels = [label for label, count in test_datapoints.items()]
+        x_labels = [f"{label} (0)" for label, count in test_datapoints.items()]
     else:
         train_datapoints = (
             mse_df[
