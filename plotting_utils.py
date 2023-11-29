@@ -411,11 +411,11 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
                         line=dict(color='black', width=100), 
                     )
             fig.add_trace(line)
-            xpos = heatmap_x_frac * cluster_position
+            xpos = (heatmap_x_frac - 0.1) * cluster_position + 0.1
             fig.update_layout(**{
                 # format to 2 digits with leading zero
                 'xaxis' + axis_num: {
-                    'domain': [xpos, xpos + 0.002], 
+                    'domain': [xpos, xpos + 0.001], 
                     'showgrid': False, 
                     'showline': False, 
                     'zeroline': False, 
@@ -431,9 +431,8 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
                     'visible': False,
                     'range': [0, 1],
                 },
-
-                'paper_bgcolor': 'rgba(0,0,0,0)',
-                'plot_bgcolor': 'rgba(0,0,0,0)',
+                # 'paper_bgcolor': 'rgba(0,0,0,0)',
+                # 'plot_bgcolor': 'rgba(0,0,0,0)',
             })
 
     # Plot!
