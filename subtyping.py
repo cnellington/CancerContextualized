@@ -475,6 +475,7 @@ def do_subtyping(diseases, subtyping_data, covars, known_subtypes_df, subtype_co
             colors=oncoplot_colors,
             show_legends=oncoplot_legends,
             savepath=f'{savedir}/{diseases}-{subtype_col}-oncoplot.pdf' if savedir is not None else None,
+            n_clusters=k,
         ) 
     plt.close('all')
     return disease_subtypes
@@ -612,26 +613,26 @@ def main(data_dir, networks_file, dryrun = True):
     # pancancer_dendrogram(gene_expression, covars, 'Pancancer Transcriptomic Organization', f"{savedir}/pancancer_transcriptomic_dendrogram.pdf") 
     # pancancer_dendrogram(metagene_expression, covars, 'Pancancer Metagene Expression Organization', f"{savedir}/pancancer_metagene_dendrogram.pdf") 
 
-    # pvals_columns = ['disease', 'method', 'mv_shared', 'pair_shared', 'mv_outer', 'pair_outer']
-    # pvals_rows = []
-    # all_subtype_dfs = []
-    # for disease in np.unique(covars['disease_type'].values):
-    #     subtype_col = 'network_subtypes'
-    #     subtype_prefix = 'Net'
-    #     disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
-    #     net_pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
-    #     pvals_rows.append([disease, 'CoCA Subtypes'] + net_pvals_row[4:])
-    #     pvals_rows.append([disease, 'Network Subtypes'] + net_pvals_row[:4])
-    #     subtype_col = 'expression_subtypes'
-    #     subtype_prefix = 'Expr'
-    #     disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
-    #     expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
-    #     pvals_rows.append([disease, 'Expression Subtypes'] + expr_pvals_row[:4])
-    #     disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df[known_subtypes_df['disease_type'] == disease].drop(columns='disease_type'), on='sample_id', how='outer')
-    #     disease_all_subtypes['disease_type'] = disease
-    #     all_subtype_dfs.append(disease_all_subtypes)
-    # pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
-    # pd.concat(all_subtype_dfs, ignore_index=True).to_csv(f'{savedir}/all_subtypes.csv', index=False)
+    pvals_columns = ['disease', 'method', 'mv_shared', 'pair_shared', 'mv_outer', 'pair_outer']
+    pvals_rows = []
+    all_subtype_dfs = []
+    for disease in np.unique(covars['disease_type'].values):
+        subtype_col = 'network_subtypes'
+        subtype_prefix = 'Net'
+        disease_net_subtypes = do_subtyping([disease], networks, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
+        net_pvals_row = do_extra_plots([disease], disease_net_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append([disease, 'CoCA Subtypes'] + net_pvals_row[4:])
+        pvals_rows.append([disease, 'Network Subtypes'] + net_pvals_row[:4])
+        subtype_col = 'expression_subtypes'
+        subtype_prefix = 'Expr'
+        disease_expr_subtypes = do_subtyping([disease], metagene_expression, covars, known_subtypes_df, subtype_col, subtype_prefix, savedir=savedir)
+        expr_pvals_row = do_extra_plots([disease], disease_expr_subtypes, known_subtypes_df, survival_df, subtype_col, show=False, savedir=savedir)
+        pvals_rows.append([disease, 'Expression Subtypes'] + expr_pvals_row[:4])
+        disease_all_subtypes = disease_net_subtypes.drop(columns='disease_type').merge(disease_expr_subtypes.drop(columns='disease_type'), on='sample_id', how='outer').merge(known_subtypes_df[known_subtypes_df['disease_type'] == disease].drop(columns='disease_type'), on='sample_id', how='outer')
+        disease_all_subtypes['disease_type'] = disease
+        all_subtype_dfs.append(disease_all_subtypes)
+    pd.DataFrame(data=pvals_rows, columns=pvals_columns).to_csv(f'{savedir}/all_pvals.csv', index=False)
+    pd.concat(all_subtype_dfs, ignore_index=True).to_csv(f'{savedir}/all_subtypes.csv', index=False)
 
 
     disease_groups = [

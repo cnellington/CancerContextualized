@@ -18,7 +18,7 @@ from IPython.display import IFrame
 
 import numpy as np
 from scipy.spatial.distance import pdist, squareform
-from scipy.cluster.hierarchy import linkage
+from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
 
 
 def cdist(m):
@@ -86,6 +86,8 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
                 legendrank=rank,
                 name=str(specval),
                 mode='markers',
+                # visible='legendonly',  # makes the legends semitransparent, maybe fix if this is an issue?
+                showlegend=True,
                 marker=dict(
                     size=100,
                     color=rgb,
@@ -115,7 +117,7 @@ def categorical_heatmap_annotation(spectrum, dendro_leaves_x, legendgroup, color
 
 
 def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectrum_labels=[], spectrum_types=[],
-                    colors=[], show_legends=[], savepath=None, dendro_height=100):
+                    colors=[], show_legends=[], savepath=None, dendro_height=100, n_clusters=None):
     heatmap_height = 300  # pixels
     spectrum_height = 20  # pixels
     spectrums_height = len(spectrums) * spectrum_height
@@ -373,6 +375,65 @@ def plot_dendrogram(networks_flat, title='', method='ward', spectrums=[], spectr
                 },
             })
         fig.update_layout(**kwargs)
+    
+    
+    # Infer clusters if requested and add vertical line separators
+    if n_clusters is not None or n_clusters > 1:
+        method = 'ward'
+        criterion = 'maxclust'
+        dist_array = cdist(networks_flat)
+        Z = linkage(dist_array, method=method)
+        cluster_labels = fcluster(Z, n_clusters, criterion=criterion)
+        dendrogram_idx = dendrogram(Z, no_plot=True)['leaves']
+
+        # Get relative positions across heatmap for vertical lines
+        cluster_positions = []
+        curr = None
+        for i, cluster_label in enumerate(cluster_labels[dendrogram_idx]):
+            if curr is None or cluster_label == curr:
+                curr = cluster_label
+                continue
+            else:
+                cluster_positions.append(i / len(cluster_labels))
+                curr = cluster_label
+
+        # Draw the vertical lines
+        for i, cluster_position in enumerate(cluster_positions): 
+            axis_num = f'{500 + i:03d}'
+            line = go.Scatter(
+                        x=[1, 1],
+                        y=[-1, 2],
+                        xaxis='x' + axis_num,
+                        yaxis='y' + axis_num,
+                        legendgroup=None,
+                        showlegend=False,
+                        mode='lines',
+                        line=dict(color='black', width=100), 
+                    )
+            fig.add_trace(line)
+            xpos = (heatmap_x_frac - 0.1) * cluster_position + 0.1
+            fig.update_layout(**{
+                # format to 2 digits with leading zero
+                'xaxis' + axis_num: {
+                    'domain': [xpos, xpos + 0.001], 
+                    'showgrid': False, 
+                    'showline': False, 
+                    'zeroline': False, 
+                    'showticklabels': False,
+                    'visible': False,
+                },
+                'yaxis' + axis_num: {
+                    'domain': [0., heatmap_frac + spectrums_frac + divider], 
+                    'showgrid': False, 
+                    'showline': False, 
+                    'zeroline': False, 
+                    'showticklabels': False,
+                    'visible': False,
+                    'range': [0, 1],
+                },
+                # 'paper_bgcolor': 'rgba(0,0,0,0)',
+                # 'plot_bgcolor': 'rgba(0,0,0,0)',
+            })
 
     # Plot!
     if savepath is None:
@@ -386,7 +447,8 @@ if __name__ == '__main__':
     n_features = 10
     n_patients = 100
     networks_dummy = np.random.normal(0, 1, (n_patients, n_features))
-    spectrums = [10 * np.random.randint(0, 10, n_patients) for i in range(n_spectrums)]
+    spectrums = [(10 * np.random.randint(0, 10, n_patients)).astype(float) for i in range(n_spectrums)]
+    spectrums[1][3] = np.nan
     spectrum_labels = [f'spectrum percent {i}' for i in range(n_spectrums)]
     spectrum_types = np.random.choice(['categorical', 'continuous'], n_spectrums, replace=True)
     colors = np.random.choice(['Blues', 'viridis', 'plasma'], n_spectrums, replace=True)
@@ -397,9 +459,9 @@ if __name__ == '__main__':
     # spectrum_types = ['continuous', 'continuous', 'categorical']
     # colors = ['Blues', 'Viridis', 'tab20']
     # show_legends = [True, False, True]
-    plot_dendrogram(networks_dummy, title='hello dendrogram', method='ward', spectrums=spectrums,
-                    spectrum_labels=spectrum_labels, spectrum_types=spectrum_types, colors=colors,
-                    show_legends=show_legends)
+    # plot_dendrogram(networks_dummy, title='hello dendrogram', method='ward', spectrums=spectrums,
+    #                 spectrum_labels=spectrum_labels, spectrum_types=spectrum_types, colors=colors,
+    #                 show_legends=show_legends)
     plot_dendrogram(networks_dummy, title='hello dendrogram', method='ward', spectrums=spectrums,
                     spectrum_labels=spectrum_labels, spectrum_types=spectrum_types, colors=colors,
                     show_legends=show_legends, dendro_height=1000)  # easy way to make legends visible
