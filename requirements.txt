@@ -1,4 +1,4 @@
-contextualized-ml==0.2.8
+contextualized-ml==0.2.9
 seaborn==0.12.2
 matplotlib==3.6.2
 plotly==5.11.0
