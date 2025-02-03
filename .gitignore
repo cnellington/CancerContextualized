@@ -1,3 +1,8 @@
+data_raw/male/*
+data_raw/female/*
+!data_raw/male/rnaseq/.gitkeep
+!data_raw/female/rnaseq/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
