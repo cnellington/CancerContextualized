@@ -3,9 +3,10 @@ seaborn==0.12.2
 matplotlib==3.6.2
 plotly==5.11.0
 umap-learn==0.5.3
-lifelines==0.27.4
+lifelines==0.30.0
 kaleido==0.2.1
 kaplanmeier==0.1.8
 scipy==1.9.3
 ipython==8.14.0
 pdf2image==1.17.0
+nbformat==5.10.4
