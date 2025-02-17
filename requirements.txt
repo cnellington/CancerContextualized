@@ -1,7 +1,6 @@
 contextualized-ml==0.2.7
 seaborn==0.12.2
 matplotlib==3.6.2
-pandas==1.5.1
 plotly==5.11.0
 umap-learn==0.5.3
 lifelines==0.27.4
