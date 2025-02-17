@@ -1,15 +1,15 @@
-# CancerContextualized
+# Cancer Contextualized (old)
 
-This the original code used for the paper "Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors"
+This the original code used for the paper "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)".
 
-For a more streamlined version with tutorials and interactive plots, please refer to the [CancerContextualized](https://github.com/cnellington/CancerContextualized/) repository.
+Most of the training and evaluation code has since been improved and added to the  [Contextualized](https://contextualized.ml/) Python library.
+For a simpler and more intuitive workflow with tutorials and interactive plots, please visit the updated [CancerContextualized](https://github.com/cnellington/CancerContextualized/) repository.
 
-[bioRxiv](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)
 
 ## Setup
 1. Create a new conda environment with python=3.10
 2. Run `pip install -r requirements.txt`
-3. Install a clashing dependency afterward `pip install pandas==1.5.1`
+3. Afterward run `pip install pandas==1.5.1`
 3. Download data from https://cmu.app.box.com/folder/203433039257 into `data/`
 
 ## Fit and Test on a Random Split
