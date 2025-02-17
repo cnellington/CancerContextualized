@@ -63,8 +63,8 @@ DEFAULT_DATA_STATE = {
     # 'single_hallmark': None,            # reduce genes to a single hallmark set
     "gene_list": None,  # only use genes in this list
     "pretransform_norm": False,  # normalize before the feature transformation
-    "transform": None,  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark_avg'
-    "feature_selection": "population",  # None to retain ordering, or select genetic features according to population variance (population) or weighted disease-specific variance (disease)
+    "transform": 'pca',  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark_avg'
+    "feature_selection": None,  # None to retain ordering, or select genetic features according to population variance (population) or weighted disease-specific variance (disease)
     "disease_labels": True,  # include disease labels and primary site information in covariates
     "features_to_covars": -1,  # -1 to ignore, or a positive number of genomic features to add to covariates
     "remove_covar_features": False,  # remove genomic features that have been added to covariates

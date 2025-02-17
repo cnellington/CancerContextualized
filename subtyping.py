@@ -671,9 +671,7 @@ def main(data_dir, networks_file, dryrun = True):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str, default='./data/')
-    # default_result_dir = 'results/230611_metagenes_30boots/neighborhood-fit_intercept=False-val_split=0.2-n_bootstraps=30'
-    default_networks = 'results/230721_metagenes_30boots_intercept/markov-fit_intercept=True-val_split=0.2-bootstraps=0-29-dry_run=False-test=True-disease_test=None/Contextualized-networks.csv'
-    parser.add_argument('--networks', type=str, default=default_networks)
+    parser.add_argument('--networks', type=str)
     parser.add_argument('--dryrun', action='store_true')
     args = parser.parse_args()
     main(args.data_dir, args.networks, dryrun = args.dryrun)
