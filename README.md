@@ -1,6 +1,6 @@
-# Cancer Contextualized (old)
+# Cancer Contextualized
 
-This the original code used for the paper "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)".
+Code used "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)"
 
 Most of the training and evaluation code has since been improved and added to the  [Contextualized](https://contextualized.ml/) Python library.
 For a simpler and more intuitive workflow with tutorials and interactive plots, please visit the updated [CancerContextualized](https://github.com/cnellington/CancerContextualized/) repository.
