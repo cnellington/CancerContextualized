@@ -6,7 +6,7 @@ Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 700
 
 ## Setup
 1. Create a new conda environment with python=3.10
-2. `pip install -r requirements_new.txt`
+2. `pip install -r requirements.txt`
 4. Get the data `wget https://zenodo.org/records/14885352/files/data.tar.gz && tar -xvf data.tar.gz`
 5. Get pre-trained networks and subtyping results for all 25 disease types
     `wget https://zenodo.org/records/14885352/files/results.tar.gz && tar -xvf results.tar.gz`
@@ -19,7 +19,7 @@ Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 700
 
 ## Setup
 1. Create a new conda environment with python=3.10
-2. Run `pip install -r requirements.txt`
+2. Run `pip install -r requirements_old.txt`
 3. Afterward run `pip install pandas==1.5.1`
 4. Get the data `wget https://zenodo.org/records/14885352/files/data.tar.gz && tar -xvf data.tar.gz`
 5. Get pre-trained networks and/or subtyping results for all 25 disease types
