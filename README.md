@@ -1,6 +1,6 @@
 # Cancer Contextualized
 
-Code used "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)"
+Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)"
 
 Most of the training and evaluation code has since been improved and added to the  [Contextualized](https://contextualized.ml/) Python library.
 For a simpler and more intuitive workflow with tutorials and interactive plots, please visit the updated [CancerContextualized](https://github.com/cnellington/CancerContextualized/) repository.
@@ -10,7 +10,9 @@ For a simpler and more intuitive workflow with tutorials and interactive plots, 
 1. Create a new conda environment with python=3.10
 2. Run `pip install -r requirements.txt`
 3. Afterward run `pip install pandas==1.5.1`
-3. Download data from https://cmu.app.box.com/folder/203433039257 into `data/`
+4. Get the data `wget https://zenodo.org/records/14885352/files/data.tar.gz && tar -xvf data.tar.gz`
+5. If you also want pre-trained networks and/or subtyping results for all 25 disease types run
+    `wget https://zenodo.org/records/14885352/files/results.tar.gz && tar -xvf results.tar.gz`
 
 ## Fit and Test on a Random Split
 ```bash
@@ -58,4 +60,4 @@ python -u subtyping.py  \
   --data_dir 'data/'
   --networks results/markov/networks.csv 
 ```
-Saves subtyping plots for all diseases and tissues in `results/markov/subtypes/`
+Saves subtyping plots for all diseases and tissues in the same folder as networks, i.e. `results/markov/subtypes/`
