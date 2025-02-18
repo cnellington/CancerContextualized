@@ -64,11 +64,11 @@ DEFAULT_DATA_STATE = {
     "gene_list": None,  # only use genes in this list
     "pretransform_norm": False,  # normalize before the feature transformation
     "transform": 'pca',  # None, or transform full expression profiles using 'pca' to num_features or 'hallmark_avg'
-    "feature_selection": None,  # None to retain ordering, or select genetic features according to population variance (population) or weighted disease-specific variance (disease)
+    "feature_selection": 'population',  # None to retain ordering, or select genetic features according to population variance (population) or weighted disease-specific variance (disease)
     "disease_labels": True,  # include disease labels and primary site information in covariates
     "features_to_covars": -1,  # -1 to ignore, or a positive number of genomic features to add to covariates
     "remove_covar_features": False,  # remove genomic features that have been added to covariates
-    "covar_projection": -1,  # -1 to ignore, or provide a positive n_components to project SNV and SCNA covariates using PCA to reduce dimensionality
+    "covar_projection": 200,  # -1 to ignore, or provide a positive n_components to project SNV and SCNA covariates using PCA to reduce dimensionality
     "test": False,  # If True, gets the real test set. If False, creates a dummy test set from the training data to avoid hyperparam tuning on the real test set
     "disease_test": None,  # None to get an even split of diseases, or a string with a disease code to get a test set with only one disease
     "dry_run": False,  # Return a small subset of the data for testing
