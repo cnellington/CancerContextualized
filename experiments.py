@@ -673,12 +673,6 @@ def main(
     # sanity.run()
     # print('sanity check completed successfully <:)')
 
-    contextual_genes = np.loadtxt(
-        "data/contextual_genes_sorted.txt", dtype=str
-    ).tolist()
-    gene_lists = HALLMARK_GENES.copy()
-    gene_lists["Contextual Metagenes"] = contextual_genes
-
     # Setup global data and experiment parameters
     data_state = DEFAULT_DATA_STATE.copy()
     data_state.update(
@@ -686,7 +680,6 @@ def main(
             "dry_run": dryrun,
             "num_features": num_features,
             "covar_projection": covar_projection,
-            # 'gene_list': gene_list,
             "transform": transform,
             "feature_selection": feature_selection,
             "test": test,
