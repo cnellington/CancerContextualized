@@ -2,7 +2,12 @@
 
 Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)"
 
-# Tutorials
+# Interactive Data Analysis
+In the study, we use contextualized networks to infer new subtypes for 25 cancer types. To reproduce these subtypes on-demand or make new ones, we created an online [Colab notebook](https://colab.research.google.com/drive/1ojMNd4upPHiZg4b5mHo9dkX2kyQgrn1u?usp=sharing) to explore pan-cancer data, infer disease subtypes using network or expression data, and evaluate subtypes in terms of prognostic ability.
+
+
+# Modeling Tutorials
+If you want to fit and evaluate contextualized networks locally, we provide 2 tutorial workflows.
 
 ## Setup
 1. Create a new conda environment with python=3.10
@@ -16,6 +21,9 @@ Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 700
 - [Tutorial 2: Interactive Plotting, Subtyping, and Survival Analysis](02_plot.ipynb)
 
 # Original Experiments
+Since the original study, contextualized networks have been added to the [Contextualized](https://contextualized.ml/) Python package.
+The above tutorials use the improved versions, but we also include the original experiment code and instructions to run below.
+
 
 ## Setup
 1. Create a new conda environment with python=3.10
