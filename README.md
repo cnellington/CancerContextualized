@@ -1,6 +1,6 @@
 # Cancer Contextualized
 
-Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.biorxiv.org/content/10.1101/2023.12.01.569658v1)"
+Code for "[Learning to Estimate Sample-Specific Transcriptional Networks for 7000 Tumors](https://www.pnas.org/doi/10.1073/pnas.2411930122)"
 
 # Interactive Data Analysis
 In the study, we use contextualized networks to infer new subtypes for 25 cancer types. To reproduce these subtypes on-demand or make new ones, we created an online [Colab notebook](https://colab.research.google.com/drive/1ojMNd4upPHiZg4b5mHo9dkX2kyQgrn1u?usp=sharing) to explore pan-cancer data, infer disease subtypes using network or expression data, and evaluate subtypes in terms of prognostic ability.
